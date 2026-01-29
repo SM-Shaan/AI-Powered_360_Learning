@@ -279,6 +279,52 @@ async def debug_search(
     return {"success": True, "data": results}
 
 
+@router.get("/debug/file-search", response_model=dict)
+async def debug_file_search(
+    query: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Debug endpoint to test file retrieval functionality.
+    """
+    chat_service = get_chat_service()
+
+    # Test file request detection
+    is_file_req, filename = chat_service._is_file_request(query)
+
+    # Try to get full file content
+    file_content = await chat_service._get_full_file_content(filename, query)
+
+    # Get list of available files
+    from app.core.supabase import get_supabase_admin
+    supabase = get_supabase_admin()
+
+    try:
+        files_result = supabase.table("content").select(
+            "id, title, file_name, file_path, category"
+        ).execute()
+        available_files = files_result.data or []
+    except Exception as e:
+        available_files = {"error": str(e)}
+
+    return {
+        "success": True,
+        "data": {
+            "query": query,
+            "is_file_request": is_file_req,
+            "detected_filename": filename,
+            "file_found": file_content is not None and file_content.get('found', False),
+            "file_content_preview": file_content.get('content', '')[:500] if file_content else None,
+            "file_metadata": {
+                "title": file_content.get('title') if file_content else None,
+                "file_name": file_content.get('file_name') if file_content else None,
+                "language": file_content.get('language') if file_content else None,
+            } if file_content else None,
+            "available_files": available_files
+        }
+    }
+
+
 @router.get("/suggestions", response_model=dict)
 async def get_suggestions(
     current_user: dict = Depends(get_current_user)

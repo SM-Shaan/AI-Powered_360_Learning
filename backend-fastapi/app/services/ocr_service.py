@@ -424,7 +424,8 @@ BEGIN EXTRACTION:"""
     async def extract_text_from_image(
         self,
         image_data: bytes,
-        enhance: bool = True
+        enhance: bool = True,
+        prefer_ai: bool = True
     ) -> Dict[str, Any]:
         """
         Extract text from an image.
@@ -432,6 +433,7 @@ BEGIN EXTRACTION:"""
         Args:
             image_data: Raw image bytes
             enhance: Whether to apply image enhancement
+            prefer_ai: Prefer AI OCR for structured academic output (default: True)
 
         Returns:
             Dict with text, confidence, engine, word_count
@@ -445,27 +447,37 @@ BEGIN EXTRACTION:"""
         else:
             enhanced_image = image
 
-        # Try Tesseract first if available
+        # PREFER AI OCR for structured academic output
+        if prefer_ai and self.openrouter_key:
+            try:
+                print("Using AI OCR for structured academic output...")
+                # Use original image for AI - it handles preprocessing better
+                return await self._extract_with_ai(image)
+            except Exception as e:
+                print(f"AI OCR failed: {e}, falling back to Tesseract")
+
+        # Fall back to Tesseract if AI not available or failed
         if self.tesseract_available:
             try:
+                print("Using Tesseract OCR...")
                 return await self._extract_with_tesseract(enhanced_image)
             except Exception as e:
-                print(f"Tesseract OCR failed: {e}, falling back to AI OCR")
+                print(f"Tesseract OCR failed: {e}")
+                # If AI is available, try it as last resort
+                if self.openrouter_key:
+                    return await self._extract_with_ai(image)
+                raise
 
-        # Fall back to AI-based OCR
-        try:
-            # Use original image (not enhanced) for AI - it handles preprocessing itself
-            return await self._extract_with_ai(image)
-        except Exception as e:
-            raise Exception(
-                f"OCR failed. Error: {str(e)}\n\n"
-                "To fix this, either:\n"
-                "1. Install Tesseract OCR:\n"
-                "   - Windows: https://github.com/UB-Mannheim/tesseract/wiki\n"
-                "   - Mac: brew install tesseract\n"
-                "   - Linux: sudo apt install tesseract-ocr\n\n"
-                "2. Or set OPENROUTER_API_KEY in .env for AI-based OCR"
-            )
+        # No OCR available
+        raise Exception(
+            "OCR failed. No OCR engine available.\n\n"
+            "To fix this, either:\n"
+            "1. Set OPENROUTER_API_KEY in .env for AI-based OCR (recommended for structured output)\n"
+            "2. Or install Tesseract OCR:\n"
+            "   - Windows: https://github.com/UB-Mannheim/tesseract/wiki\n"
+            "   - Mac: brew install tesseract\n"
+            "   - Linux: sudo apt install tesseract-ocr"
+        )
 
     async def extract_text_from_file(
         self,

@@ -376,6 +376,21 @@ class RetrievalService:
 
         return results[:top_k]
 
+    def _safe_get_dict(self, value, default=None):
+        """Safely get a dictionary from a value that might be a string or dict."""
+        if value is None:
+            return default or {}
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            try:
+                import json
+                parsed = json.loads(value)
+                return parsed if isinstance(parsed, dict) else (default or {})
+            except (json.JSONDecodeError, TypeError):
+                return default or {}
+        return default or {}
+
     async def search_code(
         self,
         query: str,
@@ -393,39 +408,47 @@ class RetrievalService:
         Returns:
             Code chunks with metadata
         """
-        # Generate embedding for code search
-        query_embedding = await self.embedding_service.embed_query(query)
+        try:
+            # Generate embedding for code search
+            query_embedding = await self.embedding_service.embed_query(query)
 
-        supabase = get_supabase_admin()
+            supabase = get_supabase_admin()
 
-        # Search in chunks where chunk_type is 'code'
-        db_query = supabase.table('content_chunks').select(
-            '*, content:content_id(title, category, content_type, topic)'
-        ).eq('chunk_type', 'code')
+            # Search in chunks where chunk_type is 'code'
+            db_query = supabase.table('content_chunks').select(
+                '*, content:content_id(title, category, content_type, topic)'
+            ).eq('chunk_type', 'code')
 
-        if language:
-            db_query = db_query.eq('metadata->>language', language)
+            if language:
+                db_query = db_query.eq('metadata->>language', language)
 
-        result = db_query.limit(top_k * 3).execute()
+            result = db_query.limit(top_k * 3).execute()
 
-        # Since we can't easily do vector search here without RPC,
-        # return top results based on metadata
-        code_results = []
-        for chunk in (result.data or []):
-            code_results.append({
-                'chunk_id': chunk['id'],
-                'content_id': chunk['content_id'],
-                'code': chunk['chunk_text'],
-                'language': chunk.get('metadata', {}).get('language', 'unknown'),
-                'function_name': chunk.get('metadata', {}).get('function_name'),
-                'class_name': chunk.get('metadata', {}).get('class_name'),
-                'similarity': 0.5,  # Placeholder without vector search
-                'content_title': chunk.get('content', {}).get('title', ''),
-                'line_start': chunk.get('metadata', {}).get('line_start'),
-                'line_end': chunk.get('metadata', {}).get('line_end')
-            })
+            # Since we can't easily do vector search here without RPC,
+            # return top results based on metadata
+            code_results = []
+            for chunk in (result.data or []):
+                # Safely parse metadata and content which might be strings
+                metadata = self._safe_get_dict(chunk.get('metadata'))
+                content = self._safe_get_dict(chunk.get('content'))
 
-        return code_results[:top_k]
+                code_results.append({
+                    'chunk_id': chunk.get('id'),
+                    'content_id': chunk.get('content_id'),
+                    'code': chunk.get('chunk_text', ''),
+                    'language': metadata.get('language', 'unknown'),
+                    'function_name': metadata.get('function_name'),
+                    'class_name': metadata.get('class_name'),
+                    'similarity': 0.5,  # Placeholder without vector search
+                    'content_title': content.get('title', ''),
+                    'line_start': metadata.get('line_start'),
+                    'line_end': metadata.get('line_end')
+                })
+
+            return code_results[:top_k]
+        except Exception as e:
+            print(f"Code search error: {e}")
+            return []
 
     async def get_context_for_rag(
         self,

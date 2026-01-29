@@ -10,7 +10,7 @@ Provides a unified chat interface that integrates:
 import httpx
 import json
 import uuid
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple
 from datetime import datetime
 from app.core.config import settings
 from app.services.wikipedia_service import get_wikipedia_service
@@ -81,6 +81,151 @@ class ChatService:
                 "usage": data.get("usage", {}),
                 "model": data.get("model", self.model)
             }
+
+    def _is_file_request(self, query: str) -> Tuple[bool, Optional[str]]:
+        """Detect if user is asking for a specific file and extract filename."""
+        import re
+        query_lower = query.lower()
+
+        # Patterns that indicate file request
+        file_request_patterns = [
+            r'(?:show|give|display|provide|get|fetch|retrieve|open|view|see|read)\s+(?:me\s+)?(?:the\s+)?(?:file|source|code|content)?\s*[:\-]?\s*["\']?([a-zA-Z0-9_\-\.]+\.[a-zA-Z0-9]+)["\']?',
+            r'(?:file|source\s*(?:code)?|content\s*of)\s*[:\-]?\s*["\']?([a-zA-Z0-9_\-\.]+\.[a-zA-Z0-9]+)["\']?',
+            r'["\']([a-zA-Z0-9_\-\.]+\.(?:cpp|c|h|hpp|py|java|js|ts|txt|md))["\']',
+            r'(?:what\'?s?\s+(?:in|inside)|contents?\s+of)\s+["\']?([a-zA-Z0-9_\-\.]+\.[a-zA-Z0-9]+)["\']?',
+        ]
+
+        for pattern in file_request_patterns:
+            match = re.search(pattern, query, re.IGNORECASE)
+            if match:
+                return True, match.group(1)
+
+        # Check for general file request keywords
+        file_keywords = ['show file', 'give file', 'source file', 'source code of', 'full file',
+                        'entire file', 'complete file', 'whole file', 'file content']
+        is_file_request = any(kw in query_lower for kw in file_keywords)
+
+        return is_file_request, None
+
+    def _get_language_from_filename(self, filename: str) -> str:
+        """Get programming language from file extension."""
+        ext_map = {
+            '.py': 'python', '.cpp': 'cpp', '.c': 'c', '.h': 'c', '.hpp': 'cpp',
+            '.java': 'java', '.js': 'javascript', '.ts': 'typescript',
+            '.html': 'html', '.css': 'css', '.json': 'json', '.xml': 'xml',
+            '.md': 'markdown', '.txt': 'text', '.sql': 'sql', '.sh': 'bash',
+            '.yml': 'yaml', '.yaml': 'yaml', '.rs': 'rust', '.go': 'go',
+            '.rb': 'ruby', '.php': 'php', '.cs': 'csharp', '.swift': 'swift',
+            '.kt': 'kotlin', '.scala': 'scala', '.r': 'r', '.m': 'matlab'
+        }
+        import os
+        ext = os.path.splitext(filename)[1].lower()
+        return ext_map.get(ext, 'text')
+
+    async def _get_full_file_content(self, filename: Optional[str] = None, query: str = "") -> Optional[Dict]:
+        """Retrieve full file content from storage."""
+        print(f"[FILE SEARCH] Looking for file. Filename hint: {filename}, Query: {query[:100]}")
+
+        try:
+            from app.core.supabase import get_supabase_admin
+            supabase = get_supabase_admin()
+
+            # Get all content files
+            content_result = supabase.table('content').select(
+                'id, title, file_path, file_name, category, content_type'
+            ).execute()
+
+            if not content_result.data:
+                print("[FILE SEARCH] No content files found in database")
+                return None
+
+            print(f"[FILE SEARCH] Found {len(content_result.data)} files in database")
+
+            # Find matching file
+            target_file = None
+            query_lower = query.lower()
+
+            # First pass: exact filename match
+            if filename:
+                for content in content_result.data:
+                    file_name = content.get('file_name', '') or ''
+                    title = content.get('title', '') or ''
+                    print(f"[FILE SEARCH] Checking: {file_name} / {title}")
+                    if filename.lower() in file_name.lower() or filename.lower() in title.lower():
+                        target_file = content
+                        print(f"[FILE SEARCH] Matched by filename hint: {file_name}")
+                        break
+
+            # Second pass: check if file name/title is mentioned in query
+            if not target_file:
+                for content in content_result.data:
+                    file_name = content.get('file_name', '') or ''
+                    title = content.get('title', '') or ''
+                    # Check if file name or title appears in query
+                    file_name_no_ext = file_name.rsplit('.', 1)[0].lower() if '.' in file_name else file_name.lower()
+                    if file_name.lower() in query_lower or file_name_no_ext in query_lower or title.lower() in query_lower:
+                        target_file = content
+                        print(f"[FILE SEARCH] Matched by query content: {file_name}")
+                        break
+
+            # Third pass: fuzzy matching with query words
+            if not target_file:
+                query_words = [w.lower() for w in query_lower.split() if len(w) > 3]
+                print(f"[FILE SEARCH] Fuzzy search with words: {query_words}")
+                for content in content_result.data:
+                    file_name = (content.get('file_name', '') or '').lower()
+                    title = (content.get('title', '') or '').lower()
+                    # Check if any significant word from query matches
+                    for word in query_words:
+                        if word in file_name or word in title:
+                            target_file = content
+                            print(f"[FILE SEARCH] Fuzzy matched: {file_name} with word '{word}'")
+                            break
+                    if target_file:
+                        break
+
+            if not target_file:
+                print("[FILE SEARCH] No matching file found")
+                # List available files for debugging
+                print("[FILE SEARCH] Available files:")
+                for c in content_result.data[:10]:
+                    print(f"  - {c.get('file_name')} ({c.get('title')})")
+                return None
+
+            print(f"[FILE SEARCH] Target file found: {target_file.get('file_name')}")
+
+            # Download full file
+            file_path = target_file.get("file_path")
+            print(f"[FILE SEARCH] Downloading from path: {file_path}")
+
+            file_data = supabase.storage.from_("materials").download(file_path)
+
+            # Decode file
+            try:
+                text = file_data.decode('utf-8')
+            except:
+                text = file_data.decode('latin-1', errors='ignore')
+
+            print(f"[FILE SEARCH] File content length: {len(text)} characters")
+
+            # Get language for syntax highlighting
+            language = self._get_language_from_filename(target_file.get('file_name', ''))
+
+            return {
+                'found': True,
+                'file_name': target_file.get('file_name', 'unknown'),
+                'title': target_file.get('title', target_file.get('file_name', 'Unknown')),
+                'content': text,
+                'language': language,
+                'category': target_file.get('category', ''),
+                'content_id': target_file.get('id')
+            }
+
+        except Exception as e:
+            print(f"[FILE SEARCH] Error getting full file: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
 
     def _is_code_query(self, query: str) -> bool:
         """Detect if query is asking about code/functions"""
@@ -175,155 +320,208 @@ class ChatService:
         self,
         query: str,
         category: Optional[str] = None,
-        max_chunks: int = 6  # Increased from 4
+        max_chunks: int = 8
     ) -> Dict:
-        """Fetch relevant context from course materials using hybrid search"""
-        if not HAS_RETRIEVAL:
-            # Even without retrieval service, try raw file search
-            chunks = await self._search_raw_files(query, max_chunks)
-            if chunks:
-                return self._format_context_response(chunks)
-            return {"found": False, "context": "", "sources": []}
+        """Fetch relevant context from course materials using multiple search strategies"""
+        print(f"[RETRIEVAL] Starting context search for: {query[:100]}")
 
-        try:
-            retrieval_service = get_retrieval_service()
+        chunks = []
+        search_terms = self._extract_search_terms(query)
+        is_code = self._is_code_query(query)
 
-            # Extract specific search terms (function names, identifiers)
-            search_terms = self._extract_search_terms(query)
-            is_code = self._is_code_query(query)
+        print(f"[RETRIEVAL] Is code query: {is_code}, Search terms: {search_terms}")
 
-            chunks = []
+        # Strategy 1: Always try direct text search first (most reliable)
+        print("[RETRIEVAL] Strategy 1: Direct text search...")
+        direct_chunks = await self._direct_text_search(query, max_chunks)
+        if direct_chunks:
+            print(f"[RETRIEVAL] Direct search found {len(direct_chunks)} chunks")
+            chunks.extend(direct_chunks)
 
-            if is_code:
-                # For code queries: prioritize exact term matching
-                # 1. First try direct text search for extracted terms
-                if search_terms:
-                    for term in search_terms[:3]:
-                        term_chunks = await self._direct_text_search(term, max_chunks)
+        # Strategy 2: Search for extracted terms individually
+        if search_terms:
+            print(f"[RETRIEVAL] Strategy 2: Searching for terms: {search_terms[:5]}")
+            for term in search_terms[:5]:
+                if len(term) >= 3:
+                    term_chunks = await self._direct_text_search(term, 3)
+                    if term_chunks:
+                        print(f"[RETRIEVAL] Term '{term}' found {len(term_chunks)} chunks")
                         chunks.extend(term_chunks)
 
-                # 2. Try hybrid search with higher keyword weight
+        # Strategy 3: Try hybrid search if retrieval service is available
+        if HAS_RETRIEVAL and len(chunks) < max_chunks:
+            try:
+                print("[RETRIEVAL] Strategy 3: Hybrid search...")
+                retrieval_service = get_retrieval_service()
                 hybrid_chunks = await retrieval_service.hybrid_search(
                     query=query,
-                    top_k=max_chunks * 2,
-                    keyword_weight=0.7,  # Higher weight for exact matches
-                    semantic_weight=0.3,
-                    category=category
-                )
-                chunks.extend(hybrid_chunks)
-
-                # 3. Also try direct code search
-                code_chunks = await retrieval_service.search_code(
-                    query=query,
-                    top_k=max_chunks
-                )
-                for c in code_chunks:
-                    chunks.append({
-                        'chunk_id': c.get('chunk_id'),
-                        'chunk_text': c.get('code', ''),
-                        'content_title': c.get('content_title', 'Code'),
-                        'content_id': c.get('content_id'),
-                        'content_category': 'lab',
-                        'similarity': 0.85  # Boost code matches
-                    })
-
-                # Deduplicate
-                seen_ids = set()
-                unique_chunks = []
-                for c in chunks:
-                    chunk_id = c.get('chunk_id') or c.get('content_id', '')
-                    if chunk_id not in seen_ids:
-                        seen_ids.add(chunk_id)
-                        unique_chunks.append(c)
-                chunks = unique_chunks[:max_chunks * 2]
-            else:
-                # For regular queries, use hybrid search with balanced weights
-                chunks = await retrieval_service.hybrid_search(
-                    query=query,
                     top_k=max_chunks,
-                    keyword_weight=0.3,
-                    semantic_weight=0.7,
+                    keyword_weight=0.6,
+                    semantic_weight=0.4,
                     category=category
                 )
+                if hybrid_chunks:
+                    print(f"[RETRIEVAL] Hybrid search found {len(hybrid_chunks)} chunks")
+                    chunks.extend(hybrid_chunks)
+            except Exception as e:
+                print(f"[RETRIEVAL] Hybrid search error: {e}")
 
-            if not chunks:
-                # Fallback 1: try direct text search in content_chunks
-                chunks = await self._direct_text_search(query, max_chunks)
+        # Strategy 4: Raw file search as fallback
+        if len(chunks) < 3:
+            print("[RETRIEVAL] Strategy 4: Raw file search...")
+            raw_chunks = await self._search_raw_files(query, max_chunks)
+            if raw_chunks:
+                print(f"[RETRIEVAL] Raw file search found {len(raw_chunks)} chunks")
+                chunks.extend(raw_chunks)
 
-            if not chunks:
-                # Fallback 2: search raw files from storage
-                chunks = await self._search_raw_files(query, max_chunks)
+        # Deduplicate by chunk_id or content hash
+        seen = set()
+        unique_chunks = []
+        for c in chunks:
+            # Create a unique key based on content
+            key = c.get('chunk_id') or hash(c.get('chunk_text', '')[:200])
+            if key not in seen:
+                seen.add(key)
+                unique_chunks.append(c)
 
-            if not chunks:
-                return {"found": False, "context": "", "sources": []}
+        chunks = unique_chunks[:max_chunks]
+        print(f"[RETRIEVAL] Final: {len(chunks)} unique chunks")
 
-            context_parts = []
-            sources = []
+        if not chunks:
+            print("[RETRIEVAL] No chunks found!")
+            return {"found": False, "context": "", "sources": []}
 
-            for chunk in chunks:
-                source_title = chunk.get('content_title', 'Course Material')
-                chunk_text = chunk.get('chunk_text', '')
-                similarity = chunk.get('similarity', 0)
+        # Format context with clear structure
+        context_parts = []
+        sources = []
 
-                # Lower threshold for better recall
-                if similarity >= 0.2 or chunk_text:
-                    context_parts.append(f"[{source_title}]: {chunk_text}")
-                    sources.append({
-                        "title": source_title,
-                        "content_id": chunk.get('content_id'),
-                        "category": chunk.get('content_category'),
-                        "relevance": round(similarity, 3) if similarity else 0.5
-                    })
+        for i, chunk in enumerate(chunks):
+            source_title = chunk.get('content_title', 'Course Material')
+            chunk_text = chunk.get('chunk_text', '')
+            similarity = chunk.get('similarity', 0.5)
+            file_name = chunk.get('file_name', '')
 
-            return {
-                "found": len(context_parts) > 0,
-                "context": "\n\n".join(context_parts),
-                "sources": sources
+            if chunk_text:
+                # Format with clear source attribution
+                if is_code or self._looks_like_code(chunk_text):
+                    # Detect language from file extension or content
+                    lang = self._detect_code_language(chunk_text, file_name)
+                    formatted = f"### Source: {source_title}\n```{lang}\n{chunk_text}\n```"
+                else:
+                    formatted = f"### Source: {source_title}\n{chunk_text}"
+
+                context_parts.append(formatted)
+                sources.append({
+                    "title": source_title,
+                    "content_id": chunk.get('content_id'),
+                    "category": chunk.get('content_category'),
+                    "relevance": round(similarity, 3) if similarity else 0.5
+                })
+
+        return {
+            "found": len(context_parts) > 0,
+            "context": "\n\n---\n\n".join(context_parts),
+            "sources": sources
+        }
+
+    def _looks_like_code(self, text: str) -> bool:
+        """Detect if text looks like code"""
+        code_indicators = [
+            'def ', 'class ', 'import ', 'from ',  # Python
+            'void ', 'int ', 'return ', '#include', 'using namespace',  # C/C++
+            'function ', 'const ', 'let ', 'var ',  # JavaScript
+            'public ', 'private ', 'static ',  # Java/C#
+            '{', '}', '();', '[];', '->'
+        ]
+        return any(indicator in text for indicator in code_indicators)
+
+    def _detect_code_language(self, text: str, filename: str = "") -> str:
+        """Detect programming language from content or filename"""
+        if filename:
+            ext_map = {
+                '.py': 'python', '.cpp': 'cpp', '.c': 'c', '.h': 'c',
+                '.java': 'java', '.js': 'javascript', '.ts': 'typescript',
+                '.html': 'html', '.css': 'css', '.sql': 'sql'
             }
-        except Exception as e:
-            print(f"Error fetching course context: {e}")
-            return {"found": False, "context": "", "sources": [], "error": str(e)}
+            import os
+            ext = os.path.splitext(filename)[1].lower()
+            if ext in ext_map:
+                return ext_map[ext]
 
-    async def _direct_text_search(self, query: str, limit: int = 4) -> List[Dict]:
-        """Direct text search in content_chunks table as fallback"""
+        # Detect from content
+        if 'def ' in text or 'import ' in text or 'print(' in text:
+            return 'python'
+        if '#include' in text or 'void ' in text or 'int main' in text:
+            return 'cpp'
+        if 'function ' in text or 'const ' in text or '=>' in text:
+            return 'javascript'
+        if 'public class' in text or 'public static void' in text:
+            return 'java'
+
+        return 'text'
+
+    async def _direct_text_search(self, query: str, limit: int = 6) -> List[Dict]:
+        """Direct text search in content_chunks table"""
         try:
             from app.core.supabase import get_supabase_admin
             supabase = get_supabase_admin()
 
-            # Search for query text in chunk_text
-            # Extract key terms from query
             import re
-            terms = re.findall(r'\w+', query)
+            # Extract meaningful terms (3+ chars, not common words)
+            stop_words = {'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had', 'her', 'was', 'one', 'our', 'out', 'has', 'have', 'been', 'some', 'what', 'when', 'where', 'which', 'this', 'that', 'with', 'from', 'show', 'give', 'file', 'code', 'source'}
+            all_terms = re.findall(r'\w+', query.lower())
+            terms = [t for t in all_terms if len(t) >= 3 and t not in stop_words]
+
+            # Also add the full query for phrase matching
+            search_queries = terms[:5]  # Top 5 terms
+            if len(query) > 5:
+                search_queries.insert(0, query)  # Full query first
+
+            print(f"[DIRECT SEARCH] Searching for terms: {search_queries}")
 
             results = []
-            for term in terms[:3]:  # Search for up to 3 terms
-                if len(term) < 3:
+            content_cache = {}  # Cache content metadata
+
+            for search_term in search_queries:
+                if len(results) >= limit * 2:
+                    break
+
+                try:
+                    # Use ilike for case-insensitive search
+                    response = supabase.table('content_chunks').select(
+                        'id, content_id, chunk_text, chunk_type'
+                    ).ilike('chunk_text', f'%{search_term}%').limit(limit).execute()
+
+                    if response.data:
+                        print(f"[DIRECT SEARCH] Term '{search_term}' found {len(response.data)} results")
+                        for chunk in response.data:
+                            content_id = chunk['content_id']
+
+                            # Get content metadata (cached)
+                            if content_id not in content_cache:
+                                content_resp = supabase.table('content').select(
+                                    'title, category, file_name'
+                                ).eq('id', content_id).execute()
+                                content_cache[content_id] = content_resp.data[0] if content_resp.data else {}
+
+                            content_meta = content_cache[content_id]
+
+                            results.append({
+                                'chunk_id': chunk['id'],
+                                'content_id': content_id,
+                                'chunk_text': chunk['chunk_text'],
+                                'chunk_type': chunk.get('chunk_type', 'text'),
+                                'content_title': content_meta.get('title', 'Course Material'),
+                                'content_category': content_meta.get('category', ''),
+                                'file_name': content_meta.get('file_name', ''),
+                                'similarity': 0.8,  # Direct text match
+                                'matched_term': search_term
+                            })
+                except Exception as term_error:
+                    print(f"[DIRECT SEARCH] Error searching term '{search_term}': {term_error}")
                     continue
 
-                # Use ilike for case-insensitive search
-                response = supabase.table('content_chunks').select(
-                    'id, content_id, chunk_text, chunk_type'
-                ).ilike('chunk_text', f'%{term}%').limit(limit).execute()
-
-                if response.data:
-                    for chunk in response.data:
-                        # Get content metadata
-                        content_resp = supabase.table('content').select(
-                            'title, category'
-                        ).eq('id', chunk['content_id']).execute()
-
-                        content_meta = content_resp.data[0] if content_resp.data else {}
-
-                        results.append({
-                            'chunk_id': chunk['id'],
-                            'content_id': chunk['content_id'],
-                            'chunk_text': chunk['chunk_text'],
-                            'content_title': content_meta.get('title', 'Course Material'),
-                            'content_category': content_meta.get('category', ''),
-                            'similarity': 0.7  # Direct text match
-                        })
-
-            # Remove duplicates
+            # Remove duplicates, prioritize longer matches
             seen = set()
             unique = []
             for r in results:
@@ -331,9 +529,13 @@ class ChatService:
                     seen.add(r['chunk_id'])
                     unique.append(r)
 
+            print(f"[DIRECT SEARCH] Returning {len(unique[:limit])} unique results")
             return unique[:limit]
+
         except Exception as e:
-            print(f"Direct text search error: {e}")
+            print(f"[DIRECT SEARCH] Error: {e}")
+            import traceback
+            traceback.print_exc()
             return []
 
     async def _search_raw_files(self, query: str, limit: int = 3) -> List[Dict]:
@@ -666,13 +868,63 @@ class ChatService:
 
         # Detect intent
         intent = self._detect_intent(user_message)
+        print(f"[CHAT] User message: {user_message[:100]}...")
+        print(f"[CHAT] Detected intent: {intent}")
+
+        # Check if user is asking for a specific file
+        is_file_request, requested_filename = self._is_file_request(user_message)
+        file_content = None
+        print(f"[CHAT] Is file request: {is_file_request}, Filename: {requested_filename}")
+
+        if is_file_request:
+            file_content = await self._get_full_file_content(requested_filename, user_message)
+            print(f"[CHAT] File content found: {file_content is not None and file_content.get('found', False)}")
+            if file_content:
+                print(f"[CHAT] File: {file_content.get('file_name')}, Content length: {len(file_content.get('content', ''))}")
 
         # Fetch relevant context based on the message
         course_context = await self._get_course_context(user_message)
         wiki_context = await self._get_wikipedia_context(user_message)
+        print(f"[CHAT] Course context found: {course_context.get('found', False)}")
 
-        # Build system prompt with strict grounding requirements
-        system_prompt = """You are an AI learning assistant for a university course platform.
+        # Build system prompt based on request type
+        if is_file_request and file_content:
+            system_prompt = """You are an AI learning assistant for a university course platform.
+
+The user has requested a specific file. Your job is to present the file content clearly and professionally.
+
+RESPONSE FORMAT FOR FILE REQUESTS:
+1. Start with a brief header showing the file name and type
+2. Present the COMPLETE file content in a properly formatted code block with syntax highlighting
+3. After the code, provide a brief summary of what the file contains
+4. If the file is long, still show the COMPLETE content - do not truncate
+
+EXAMPLE RESPONSE:
+## 📄 File: example.cpp
+
+```cpp
+// Complete file content here
+#include <iostream>
+
+int main() {
+    std::cout << "Hello World" << std::endl;
+    return 0;
+}
+```
+
+### Summary
+This file contains a simple C++ program that prints "Hello World" to the console.
+
+---
+**Source:** [File Name from Course Materials]
+
+IMPORTANT:
+- Always use the correct language identifier in code blocks (cpp, python, java, etc.)
+- Show the ENTIRE file content, not just snippets
+- Use proper markdown formatting
+- Add line numbers if the code is educational"""
+        else:
+            system_prompt = """You are an AI learning assistant for a university course platform.
 
 CRITICAL GROUNDING RULES:
 1. ONLY answer based on the provided context (course materials or Wikipedia)
@@ -683,6 +935,10 @@ CRITICAL GROUNDING RULES:
 
 RESPONSE FORMAT:
 - Use markdown formatting for readability
+- For ANY code snippets, ALWAYS use fenced code blocks with language identifiers:
+  ```python
+  code here
+  ```
 - Include inline citations [Source: ...] when referencing specific information
 - At the end, list which sources you actually used
 - If no relevant context was provided, state that clearly
@@ -701,8 +957,32 @@ If context is NOT relevant to the question, respond:
         context_message = ""
         sources = []
 
+        # If file was requested and found, add full file content first
+        if is_file_request and file_content and file_content.get('found'):
+            lang = file_content.get('language', 'text')
+            content = file_content.get('content', '')
+            title = file_content.get('title', file_content.get('file_name', 'Unknown'))
+
+            context_message += f"\n\n[REQUESTED FILE: {file_content.get('file_name', 'unknown')}]\n"
+            context_message += f"Language: {lang}\n"
+            context_message += f"```{lang}\n{content}\n```\n"
+
+            sources.append({
+                "type": "file",
+                "title": title,
+                "file_name": file_content.get('file_name'),
+                "relevance": 1.0
+            })
+
         if course_context.get("found"):
-            context_message += f"\n\n[COURSE MATERIALS CONTEXT]\n{course_context['context']}\n"
+            # Format code content properly
+            context_text = course_context['context']
+            # Check if it looks like code and wrap appropriately
+            if self._is_code_query(user_message):
+                context_message += f"\n\n[COURSE MATERIALS - CODE CONTEXT]\n```\n{context_text}\n```\n"
+            else:
+                context_message += f"\n\n[COURSE MATERIALS CONTEXT]\n{context_text}\n"
+
             sources.extend([{
                 "type": "course",
                 "title": s["title"],
