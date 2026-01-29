@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Upload, X, Check } from 'lucide-react';
+import { Upload, X, Check, AlertTriangle } from 'lucide-react';
 import { contentAPI } from '../services/api';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
@@ -19,6 +19,7 @@ function UploadForm({ onUploadSuccess }) {
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [duplicateInfo, setDuplicateInfo] = useState(null); // For duplicate detection
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -38,8 +39,8 @@ function UploadForm({ onUploadSuccess }) {
     }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (e, forceUpload = false) => {
+    e?.preventDefault();
 
     if (!file) {
       setMessage({ type: 'error', text: 'Please select a file to upload' });
@@ -48,6 +49,7 @@ function UploadForm({ onUploadSuccess }) {
 
     setUploading(true);
     setMessage({ type: '', text: '' });
+    setDuplicateInfo(null);
 
     try {
       const data = new FormData();
@@ -56,7 +58,7 @@ function UploadForm({ onUploadSuccess }) {
         if (value) data.append(key, value);
       });
 
-      const response = await contentAPI.upload(data);
+      const response = await contentAPI.upload(data, forceUpload);
 
       setMessage({ type: 'success', text: 'Content uploaded successfully!' });
       setFormData({
@@ -76,13 +78,35 @@ function UploadForm({ onUploadSuccess }) {
       onUploadSuccess && onUploadSuccess(response.data.data);
     } catch (error) {
       console.error('Upload error:', error);
-      setMessage({
-        type: 'error',
-        text: error.response?.data?.error || 'Failed to upload content'
-      });
+
+      // Check if it's a duplicate error (409 Conflict)
+      if (error.response?.status === 409) {
+        const detail = error.response.data?.detail;
+        setDuplicateInfo({
+          message: detail?.message || 'A file with this name already exists',
+          existing: detail?.existing,
+          options: detail?.options
+        });
+        setMessage({ type: 'warning', text: 'Duplicate file detected' });
+      } else {
+        setMessage({
+          type: 'error',
+          text: error.response?.data?.detail?.message || error.response?.data?.error || 'Failed to upload content'
+        });
+      }
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleForceUpload = () => {
+    setDuplicateInfo(null);
+    handleSubmit(null, true);
+  };
+
+  const handleCancelUpload = () => {
+    setDuplicateInfo(null);
+    setMessage({ type: '', text: '' });
   };
 
   const inputClasses = "w-full px-3 py-2 bg-white border border-gray-200 rounded-md text-gray-900 focus:outline-none focus:ring-1 focus:ring-emerald-500";
@@ -95,13 +119,53 @@ function UploadForm({ onUploadSuccess }) {
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-5">
-          {message.text && (
+          {/* Duplicate File Warning */}
+          {duplicateInfo && (
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5" />
+                <div className="flex-1">
+                  <h4 className="font-medium text-amber-800">{duplicateInfo.message}</h4>
+                  {duplicateInfo.existing && (
+                    <div className="mt-2 text-sm text-amber-700">
+                      <p><strong>Existing file:</strong> {duplicateInfo.existing.title}</p>
+                      <p><strong>Category:</strong> {duplicateInfo.existing.category}</p>
+                      <p><strong>Uploaded:</strong> {new Date(duplicateInfo.existing.created_at).toLocaleDateString()}</p>
+                    </div>
+                  )}
+                  <div className="mt-3 flex gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleForceUpload}
+                      className="bg-amber-600 hover:bg-amber-700 text-white"
+                    >
+                      Replace Existing
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleCancelUpload}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {message.text && !duplicateInfo && (
             <div className={cn(
               "flex items-center gap-2 p-3 rounded-md font-medium",
               message.type === 'success' && "bg-emerald-500/20 text-emerald-600",
-              message.type === 'error' && "bg-red-500/20 text-red-600"
+              message.type === 'error' && "bg-red-500/20 text-red-600",
+              message.type === 'warning' && "bg-amber-500/20 text-amber-600"
             )}>
-              {message.type === 'success' ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
+              {message.type === 'success' ? <Check className="h-4 w-4" /> :
+               message.type === 'warning' ? <AlertTriangle className="h-4 w-4" /> :
+               <X className="h-4 w-4" />}
               {message.text}
             </div>
           )}

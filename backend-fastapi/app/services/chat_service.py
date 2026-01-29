@@ -460,6 +460,96 @@ class ChatService:
 
         return 'text'
 
+    def _detect_requested_language(self, query: str) -> Optional[str]:
+        """Detect if user is asking for a specific programming language."""
+        query_lower = query.lower()
+
+        # Language patterns: "python code", "in python", "using python", etc.
+        language_patterns = {
+            'python': ['python', 'py ', '.py'],
+            'cpp': ['c++', 'cpp', 'c++ code', '.cpp', '.hpp'],
+            'c': [' c code', ' c program', '.c ', 'in c ', 'using c '],
+            'java': ['java', '.java'],
+            'javascript': ['javascript', 'js ', '.js', 'node'],
+            'typescript': ['typescript', '.ts'],
+            'rust': ['rust', '.rs'],
+            'go': ['golang', ' go ', '.go'],
+            'sql': ['sql', 'query', 'database'],
+            'html': ['html', 'webpage'],
+            'css': ['css', 'style']
+        }
+
+        for lang, patterns in language_patterns.items():
+            for pattern in patterns:
+                if pattern in query_lower:
+                    return lang
+
+        return None
+
+    def _validate_context_relevance(
+        self,
+        query: str,
+        context: Dict,
+        requested_language: Optional[str]
+    ) -> Dict:
+        """Validate if the retrieved context is actually relevant to the query."""
+        validation = {
+            'is_relevant': False,
+            'language_match': True,
+            'has_content': False,
+            'confidence': 0.0,
+            'issues': []
+        }
+
+        if not context.get('found'):
+            validation['issues'].append('No content found in database')
+            return validation
+
+        context_text = context.get('context', '')
+        validation['has_content'] = len(context_text) > 50
+
+        # Check if requested language matches context
+        if requested_language:
+            context_lower = context_text.lower()
+
+            language_indicators = {
+                'python': ['def ', 'import ', 'print(', 'self.', '__init__', 'elif', 'True', 'False', 'None'],
+                'cpp': ['#include', 'std::', 'cout', 'cin', 'void ', 'int main', '->'],
+                'c': ['#include', 'printf', 'scanf', 'void ', 'int main', 'malloc'],
+                'java': ['public class', 'public static void', 'System.out', 'import java'],
+                'javascript': ['function ', 'const ', 'let ', '=>', 'console.log', 'require('],
+            }
+
+            if requested_language in language_indicators:
+                indicators = language_indicators[requested_language]
+                matches = sum(1 for ind in indicators if ind.lower() in context_lower)
+
+                if matches == 0:
+                    validation['language_match'] = False
+                    validation['issues'].append(f'No {requested_language} code found in context')
+
+                    # Check what language IS in the context
+                    for lang, inds in language_indicators.items():
+                        lang_matches = sum(1 for ind in inds if ind.lower() in context_lower)
+                        if lang_matches >= 2:
+                            validation['issues'].append(f'Context contains {lang} code instead')
+                            break
+
+        # Calculate relevance confidence
+        query_words = [w.lower() for w in query.split() if len(w) > 3]
+        context_lower = context_text.lower()
+        word_matches = sum(1 for w in query_words if w in context_lower)
+        validation['confidence'] = min(word_matches / max(len(query_words), 1), 1.0)
+
+        # Determine if relevant
+        validation['is_relevant'] = (
+            validation['has_content'] and
+            validation['language_match'] and
+            validation['confidence'] > 0.2
+        )
+
+        return validation
+
     async def _direct_text_search(self, query: str, limit: int = 6) -> List[Dict]:
         """Direct text search in content_chunks table"""
         try:
@@ -882,10 +972,22 @@ class ChatService:
             if file_content:
                 print(f"[CHAT] File: {file_content.get('file_name')}, Content length: {len(file_content.get('content', ''))}")
 
+        # Detect if user is asking for specific programming language
+        requested_language = self._detect_requested_language(user_message)
+        print(f"[CHAT] Requested language: {requested_language}")
+
         # Fetch relevant context based on the message
         course_context = await self._get_course_context(user_message)
         wiki_context = await self._get_wikipedia_context(user_message)
         print(f"[CHAT] Course context found: {course_context.get('found', False)}")
+
+        # Validate if context matches the request
+        context_validation = self._validate_context_relevance(
+            user_message,
+            course_context,
+            requested_language
+        )
+        print(f"[CHAT] Context validation: {context_validation}")
 
         # Build system prompt based on request type
         if is_file_request and file_content:
@@ -924,44 +1026,88 @@ IMPORTANT:
 - Use proper markdown formatting
 - Add line numbers if the code is educational"""
         else:
-            system_prompt = """You are an AI learning assistant for a university course platform.
+            # Build context-aware system prompt
+            validation_note = ""
+            if not context_validation['is_relevant']:
+                if not context_validation['language_match'] and requested_language:
+                    validation_note = f"""
+IMPORTANT CONTEXT NOTICE:
+- The user asked for {requested_language.upper()} code
+- The available course materials do NOT contain {requested_language} code
+- Issues: {', '.join(context_validation['issues'])}
+- You MUST clearly state that {requested_language} code is not available
+- Do NOT present other language code as if it answers their question
+- Be honest: explain what IS available vs what was requested
+"""
+                elif not context_validation['has_content']:
+                    validation_note = """
+IMPORTANT CONTEXT NOTICE:
+- No relevant content was found in the course materials for this query
+- You MUST clearly state this to the user
+- Do NOT make up information or pretend you have relevant content
+"""
 
-CRITICAL GROUNDING RULES:
-1. ONLY answer based on the provided context (course materials or Wikipedia)
-2. If the context doesn't contain relevant information, say "I don't have information about this in the course materials"
-3. NEVER make up facts or information not present in the context
-4. When you use information from context, cite it inline like this: [Source: Title]
-5. If asked about something not in the context, acknowledge this clearly
+            system_prompt = f"""You are an AI learning assistant for a university course platform.
 
+CRITICAL HONESTY RULES:
+1. ONLY answer based on the provided context (course materials)
+2. If the context doesn't contain what the user asked for, SAY SO CLEARLY
+3. NEVER present unrelated content as if it answers the user's question
+4. If user asks for Python code but you only have C++ code, explicitly state: "I don't have Python code in the course materials, but I have C++ code for [topic]"
+5. Be transparent about what's available vs what was requested
+{validation_note}
 RESPONSE FORMAT:
 - Use markdown formatting for readability
-- For ANY code snippets, ALWAYS use fenced code blocks with language identifiers:
-  ```python
-  code here
-  ```
-- Include inline citations [Source: ...] when referencing specific information
+- For code snippets, ALWAYS use fenced code blocks with correct language identifiers
+- Include inline citations [Source: ...] when referencing information
 - At the end, list which sources you actually used
-- If no relevant context was provided, state that clearly
+- If content doesn't match the request, explain clearly
 
-EXAMPLE:
-User: What is a binary tree?
-Response: A binary tree is a data structure where each node has at most two children [Source: Data Structures Lecture 5]. The left child is typically smaller and the right child is larger in a binary search tree [Source: Data Structures Lecture 5].
+WHEN CONTENT DOESN'T MATCH:
+User asks for: Python code for sorting
+You have: C++ code for sorting
 
-Sources used: Data Structures Lecture 5
+CORRECT RESPONSE:
+"I don't have Python code for sorting in the course materials. However, I do have C++ code that demonstrates the sorting algorithm:
 
-If context is NOT relevant to the question, respond:
-"I don't have specific information about [topic] in the available course materials. Would you like me to explain based on general knowledge, or would you prefer to search for specific course content?"
+```cpp
+// C++ sorting code here
+```
+
+Would you like me to:
+1. Explain the algorithm so you can implement it in Python?
+2. Search for other related materials?
+
+**Note:** The course materials currently contain C/C++ code examples."
+
+WRONG RESPONSE:
+"Here's the sorting code:" [shows C++ without mentioning it's not Python]
 """
 
         # Add context to the conversation
         context_message = ""
         sources = []
 
+        # Add validation warning if context doesn't match request
+        if not context_validation['is_relevant'] and context_validation['issues']:
+            context_message += "\n\n[VALIDATION WARNING]\n"
+            context_message += f"User Request: {user_message}\n"
+            if requested_language:
+                context_message += f"Requested Language: {requested_language.upper()}\n"
+            context_message += f"Issues Found:\n"
+            for issue in context_validation['issues']:
+                context_message += f"- {issue}\n"
+            context_message += "\nIMPORTANT: Be honest with the user about these limitations.\n"
+
         # If file was requested and found, add full file content first
         if is_file_request and file_content and file_content.get('found'):
             lang = file_content.get('language', 'text')
             content = file_content.get('content', '')
             title = file_content.get('title', file_content.get('file_name', 'Unknown'))
+
+            # Check if file language matches requested language
+            if requested_language and lang != requested_language:
+                context_message += f"\n\n[NOTE: File is in {lang.upper()}, not {requested_language.upper()} as requested]\n"
 
             context_message += f"\n\n[REQUESTED FILE: {file_content.get('file_name', 'unknown')}]\n"
             context_message += f"Language: {lang}\n"
@@ -971,15 +1117,21 @@ If context is NOT relevant to the question, respond:
                 "type": "file",
                 "title": title,
                 "file_name": file_content.get('file_name'),
+                "language": lang,
                 "relevance": 1.0
             })
 
         if course_context.get("found"):
-            # Format code content properly
             context_text = course_context['context']
-            # Check if it looks like code and wrap appropriately
-            if self._is_code_query(user_message):
-                context_message += f"\n\n[COURSE MATERIALS - CODE CONTEXT]\n```\n{context_text}\n```\n"
+
+            # Detect what language the context actually contains
+            detected_lang = self._detect_code_language(context_text, '')
+            if requested_language and detected_lang != 'text' and detected_lang != requested_language:
+                context_message += f"\n\n[NOTE: Available code is in {detected_lang.upper()}, not {requested_language.upper()} as requested]\n"
+
+            # Format code content properly
+            if self._is_code_query(user_message) or self._looks_like_code(context_text):
+                context_message += f"\n\n[COURSE MATERIALS - CODE ({detected_lang.upper()})]\n```{detected_lang}\n{context_text}\n```\n"
             else:
                 context_message += f"\n\n[COURSE MATERIALS CONTEXT]\n{context_text}\n"
 

@@ -145,6 +145,57 @@ async def get_content_by_id(content_id: str):
 
     return {"success": True, "data": content}
 
+
+@router.get("/check-duplicate", response_model=dict)
+async def check_duplicate_file(
+    file_name: str = Query(..., description="File name to check"),
+    title: Optional[str] = Query(None, description="Title to check"),
+    category: Optional[str] = Query(None, description="Category filter"),
+    admin: dict = Depends(require_admin)
+):
+    """
+    Check if a file with the same name or title already exists.
+    Returns existing content info if found.
+    """
+    supabase = get_supabase()
+    duplicates = []
+
+    # Check by file name
+    if file_name:
+        result = supabase.table("content").select(
+            "id, title, file_name, category, content_type, created_at"
+        ).eq("file_name", file_name).execute()
+
+        if result.data:
+            for item in result.data:
+                duplicates.append({
+                    **item,
+                    "match_type": "file_name"
+                })
+
+    # Check by title (if provided)
+    if title:
+        result = supabase.table("content").select(
+            "id, title, file_name, category, content_type, created_at"
+        ).eq("title", title).execute()
+
+        if result.data:
+            for item in result.data:
+                # Avoid duplicate entries
+                if not any(d["id"] == item["id"] for d in duplicates):
+                    duplicates.append({
+                        **item,
+                        "match_type": "title"
+                    })
+
+    return {
+        "exists": len(duplicates) > 0,
+        "duplicates": duplicates,
+        "count": len(duplicates),
+        "message": f"Found {len(duplicates)} existing file(s) with same name/title" if duplicates else "No duplicates found"
+    }
+
+
 @router.post("/", response_model=dict)
 async def upload_content(
     file: UploadFile = File(...),
@@ -155,9 +206,10 @@ async def upload_content(
     topic: Optional[str] = Form(None),
     week: Optional[int] = Form(None),
     tags: Optional[str] = Form(None),
+    force_upload: bool = Form(False),
     admin: dict = Depends(require_admin)
 ):
-    """Upload new content (Admin only)"""
+    """Upload new content (Admin only). Set force_upload=true to override duplicate check."""
 
     # Validate file
     if not validate_file(file.filename):
@@ -175,6 +227,28 @@ async def upload_content(
         )
 
     supabase = get_supabase()
+
+    # Check for duplicates unless force_upload is True
+    if not force_upload:
+        existing_by_name = supabase.table("content").select(
+            "id, title, file_name, category, created_at"
+        ).eq("file_name", file.filename).execute()
+
+        if existing_by_name.data:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "error": "duplicate_file",
+                    "message": f"A file named '{file.filename}' already exists",
+                    "existing": existing_by_name.data[0],
+                    "options": [
+                        {"action": "replace", "description": "Replace existing file"},
+                        {"action": "rename", "description": "Upload with a different name"},
+                        {"action": "skip", "description": "Cancel upload"}
+                    ]
+                }
+            )
+
     content_id = str(uuid.uuid4())
 
     # Upload file to Supabase Storage
@@ -268,10 +342,12 @@ async def upload_handwritten_notes(
     week: Optional[int] = Form(None),
     tags: Optional[str] = Form(None),
     enhance_image: bool = Form(True),
+    force_upload: bool = Form(False),
     admin: dict = Depends(require_admin)
 ):
     """
     Upload handwritten notes image and extract text using OCR.
+    Set force_upload=true to override duplicate check.
 
     This endpoint:
     1. Accepts image files (jpg, png, etc.)
@@ -306,6 +382,28 @@ async def upload_handwritten_notes(
         )
 
     supabase = get_supabase()
+
+    # Check for duplicates unless force_upload is True
+    if not force_upload:
+        existing_by_name = supabase.table("content").select(
+            "id, title, file_name, category, created_at"
+        ).eq("file_name", file.filename).execute()
+
+        if existing_by_name.data:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "error": "duplicate_file",
+                    "message": f"A file named '{file.filename}' already exists",
+                    "existing": existing_by_name.data[0],
+                    "options": [
+                        {"action": "replace", "description": "Replace existing file"},
+                        {"action": "rename", "description": "Upload with a different name"},
+                        {"action": "skip", "description": "Cancel upload"}
+                    ]
+                }
+            )
+
     content_id = str(uuid.uuid4())
 
     # Perform OCR to extract text
@@ -405,9 +503,11 @@ async def upload_handwritten_notes(
         content["processing"] = {"status": "processing_in_background"}
 
     content["ocr_result"] = {
+        "text": extracted_text,  # Include the full structured text
         "text_length": len(extracted_text),
         "confidence": ocr_confidence,
-        "engine": ocr_result.get('engine', 'unknown')
+        "engine": ocr_result.get('engine', 'unknown'),
+        "structured": ocr_result.get('structured', False)
     }
 
     return {"success": True, "data": content}

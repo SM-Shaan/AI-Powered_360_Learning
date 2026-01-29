@@ -69,15 +69,32 @@ export const contentAPI = {
   // Get single content by ID
   getById: (id) => api.get(`/content/${id}`),
 
+  // Check for duplicate files before upload
+  checkDuplicate: (fileName, title = null) => {
+    const params = new URLSearchParams({ file_name: fileName });
+    if (title) params.append('title', title);
+    return api.get(`/content/check-duplicate?${params.toString()}`);
+  },
+
   // Upload new content (Admin only)
-  upload: (formData) => api.post('/content', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  }),
+  upload: (formData, forceUpload = false) => {
+    if (forceUpload) {
+      formData.append('force_upload', 'true');
+    }
+    return api.post('/content', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+  },
 
   // Upload handwritten notes with OCR (Admin only)
-  uploadHandwrittenNotes: (formData) => api.post('/content/handwritten-notes', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  }),
+  uploadHandwrittenNotes: (formData, forceUpload = false) => {
+    if (forceUpload) {
+      formData.append('force_upload', 'true');
+    }
+    return api.post('/content/handwritten-notes', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+  },
 
   // Re-run OCR on existing handwritten notes (Admin only)
   reprocessOCR: (id, enhanceImage = true) =>
