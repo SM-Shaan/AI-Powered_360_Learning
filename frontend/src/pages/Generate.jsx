@@ -83,26 +83,44 @@ const LOADING_MESSAGES = [
   'Almost there...'
 ];
 
+// Storage key for persisting generated content
+const STORAGE_KEY = 'ai_generated_content';
+
 const Generate = () => {
-  const [activeType, setActiveType] = useState('notes');
+  // Load initial state from localStorage
+  const loadSavedState = () => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error('Failed to load saved state:', e);
+    }
+    return null;
+  };
+
+  const savedState = loadSavedState();
+
+  const [activeType, setActiveType] = useState(savedState?.activeType || 'notes');
   const [loading, setLoading] = useState(false);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
-  const [result, setResult] = useState(null);
+  const [result, setResult] = useState(savedState?.result || null);
   const [error, setError] = useState('');
   const [languages, setLanguages] = useState([]);
   const [copied, setCopied] = useState(false);
 
   // Form states
-  const [topic, setTopic] = useState('');
-  const [difficulty, setDifficulty] = useState('intermediate');
-  const [includeExamples, setIncludeExamples] = useState(true);
-  const [numSlides, setNumSlides] = useState(10);
-  const [language, setLanguage] = useState('python');
-  const [includeComments, setIncludeComments] = useState(true);
-  const [includeTests, setIncludeTests] = useState(true);
-  const [numQuestions, setNumQuestions] = useState(5);
-  const [questionTypes, setQuestionTypes] = useState(['mcq', 'short_answer', 'true_false']);
-  const [additionalContext, setAdditionalContext] = useState('');
+  const [topic, setTopic] = useState(savedState?.topic || '');
+  const [difficulty, setDifficulty] = useState(savedState?.difficulty || 'intermediate');
+  const [includeExamples, setIncludeExamples] = useState(savedState?.includeExamples ?? true);
+  const [numSlides, setNumSlides] = useState(savedState?.numSlides || 10);
+  const [language, setLanguage] = useState(savedState?.language || 'python');
+  const [includeComments, setIncludeComments] = useState(savedState?.includeComments ?? true);
+  const [includeTests, setIncludeTests] = useState(savedState?.includeTests ?? true);
+  const [numQuestions, setNumQuestions] = useState(savedState?.numQuestions || 5);
+  const [questionTypes, setQuestionTypes] = useState(savedState?.questionTypes || ['mcq', 'short_answer', 'true_false']);
+  const [additionalContext, setAdditionalContext] = useState(savedState?.additionalContext || '');
 
   // Wikipedia preview
   const [wikiPreview, setWikiPreview] = useState(null);
@@ -119,6 +137,30 @@ const Generate = () => {
   useEffect(() => {
     loadLanguages();
   }, []);
+
+  // Save state to localStorage whenever result or form values change
+  useEffect(() => {
+    const stateToSave = {
+      activeType,
+      result,
+      topic,
+      difficulty,
+      includeExamples,
+      numSlides,
+      language,
+      includeComments,
+      includeTests,
+      numQuestions,
+      questionTypes,
+      additionalContext,
+      savedAt: new Date().toISOString()
+    };
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave));
+    } catch (e) {
+      console.error('Failed to save state:', e);
+    }
+  }, [result, activeType, topic, difficulty, includeExamples, numSlides, language, includeComments, includeTests, numQuestions, questionTypes, additionalContext]);
 
   // Loading message animation
   useEffect(() => {
@@ -833,6 +875,9 @@ const Generate = () => {
                   setResult(null);
                   setCurrentSlide(0);
                   setShowAnswers({});
+                  setTopic('');
+                  setAdditionalContext('');
+                  localStorage.removeItem(STORAGE_KEY);
                 }}
                 className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
               >

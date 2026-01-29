@@ -125,18 +125,111 @@ class OCRService:
         full_text = ' '.join(texts)
         avg_confidence = sum(confidences) / len(confidences) / 100 if confidences else 0
 
-        # Also get simple text extraction
+        # Also get simple text extraction (preserves more structure)
         simple_text = pytesseract.image_to_string(image)
 
         if len(simple_text.strip()) > len(full_text):
             full_text = simple_text.strip()
 
+        # If OpenRouter is available, structure the text with AI
+        if self.openrouter_key and len(full_text) > 50:
+            try:
+                structured_text = await self._structure_text_with_ai(full_text)
+                if structured_text:
+                    full_text = structured_text
+            except Exception as e:
+                print(f"AI structuring failed, using raw text: {e}")
+
         return {
             'text': full_text,
             'confidence': avg_confidence,
-            'engine': 'tesseract',
-            'word_count': len(texts)
+            'engine': 'tesseract+ai' if self.openrouter_key else 'tesseract',
+            'word_count': len(full_text.split())
         }
+
+    async def _structure_text_with_ai(self, raw_text: str) -> Optional[str]:
+        """Use AI to structure raw OCR text into academic format."""
+        if not self.openrouter_key or len(raw_text) < 50:
+            return None
+
+        try:
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                response = await client.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self.openrouter_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": "anthropic/claude-3.5-haiku",  # Fast model for text processing
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": f"""Transform this raw OCR-extracted text into professionally structured academic notes using markdown.
+
+## FORMATTING REQUIREMENTS:
+
+### Headings & Structure:
+- # for main title
+- ## for major sections
+- ### for subsections
+- Use --- to separate major topics
+
+### Definitions (REQUIRED FORMAT):
+**Term Name**
+: Definition explanation here
+
+### Key Terms:
+- Bold all **important concepts** and **technical terms**
+
+### Lists:
+- Use bullet points (-) for unordered items
+- Use numbers (1. 2. 3.) for sequential steps or ordered items
+
+### Math & Formulas:
+- Inline: $formula$
+- Block: $$formula$$
+
+### Code:
+```language
+code here
+```
+
+### Examples & Notes:
+> **Example:** Description here
+
+### Tables (if data is tabular):
+| Header 1 | Header 2 |
+|----------|----------|
+| Data     | Data     |
+
+## INSTRUCTIONS:
+1. Identify the main topic/title and create a heading
+2. Organize content into logical sections
+3. Format all definitions properly with the **: format
+4. Fix OCR errors but preserve technical accuracy
+5. Add proper spacing between sections
+6. Output ONLY the formatted markdown, no explanations
+
+## RAW OCR TEXT:
+{raw_text}
+
+## STRUCTURED MARKDOWN OUTPUT:"""
+                            }
+                        ],
+                        "max_tokens": 4000,
+                        "temperature": 0.1
+                    }
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    structured = result['choices'][0]['message']['content']
+                    return self._clean_ocr_output(structured)
+        except Exception as e:
+            print(f"Text structuring error: {e}")
+
+        return None
 
     async def _extract_with_ai(
         self,
@@ -166,7 +259,7 @@ class OCRService:
                         "X-Title": "AI Learning Platform OCR"
                     },
                     json={
-                        "model": "anthropic/claude-3.5-sonnet",
+                        "model": "anthropic/claude-sonnet-4",
                         "messages": [
                             {
                                 "role": "user",
@@ -179,22 +272,95 @@ class OCRService:
                                     },
                                     {
                                         "type": "text",
-                                        "text": """Extract ALL text from this handwritten notes image.
+                                        "text": """You are an expert academic document processor. Extract ALL text from this handwritten/typed notes image and structure it into professional academic markdown format.
 
-Instructions:
-- Transcribe every word you can read, even if partially legible
-- Preserve the structure (paragraphs, bullet points, numbered lists)
-- Use markdown formatting where appropriate
-- If you see diagrams or drawings, describe them briefly in [brackets]
-- If a word is unclear, make your best guess
-- Do NOT add any commentary - only output the transcribed text
+## MANDATORY OUTPUT STRUCTURE:
 
-Transcribed text:"""
+### 1. TITLE/HEADER (if visible)
+```
+# [Main Title or Topic]
+```
+
+### 2. SECTIONS & SUBSECTIONS
+Use proper heading hierarchy:
+```
+## Section Name
+### Subsection Name
+#### Sub-subsection (if needed)
+```
+
+### 3. DEFINITIONS (format ALL definitions like this):
+```
+**Term Name**
+: Definition text here. Include all relevant details.
+```
+
+### 4. KEY CONCEPTS (highlight important terms):
+```
+The **important concept** is explained as follows...
+```
+
+### 5. MATHEMATICAL FORMULAS:
+- Inline math: $E = mc^2$
+- Block equations:
+$$
+\\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}
+$$
+
+### 6. LISTS & BULLET POINTS:
+```
+- First item
+- Second item
+  - Nested item
+
+1. Numbered step one
+2. Numbered step two
+```
+
+### 7. CODE BLOCKS (if any programming content):
+```python
+def example():
+    return "code here"
+```
+
+### 8. TABLES (if tabular data exists):
+```
+| Column 1 | Column 2 | Column 3 |
+|----------|----------|----------|
+| Data 1   | Data 2   | Data 3   |
+```
+
+### 9. EXAMPLES & NOTES:
+```
+> **Example:** This is an example or important note
+> Additional context here
+```
+
+### 10. DIAGRAMS/FIGURES:
+```
+![Diagram Description](diagram)
+*Figure 1: Caption describing the diagram*
+```
+
+## CONTENT RULES:
+1. Extract EVERY piece of text visible in the image
+2. Preserve the logical hierarchy and relationships
+3. Fix obvious OCR/spelling errors but keep technical terms exact
+4. Mark unclear text as [unclear] or [?]
+5. Describe any diagrams, graphs, or figures in detail
+6. Use horizontal rules (---) to separate major sections
+7. Add blank lines between sections for readability
+
+## OUTPUT FORMAT:
+Start directly with the structured markdown content. Do NOT include any preamble like "Here is the extracted text" - just output the formatted notes.
+
+BEGIN EXTRACTION:"""
                                     }
                                 ]
                             }
                         ],
-                        "max_tokens": 4000
+                        "max_tokens": 8000,
+                        "temperature": 0.1  # Low temperature for accurate extraction
                     }
                 )
 
@@ -207,18 +373,53 @@ Transcribed text:"""
 
                 result = response.json()
                 extracted_text = result['choices'][0]['message']['content']
+
+                # Clean up the output - remove any preamble if the model added it
+                extracted_text = self._clean_ocr_output(extracted_text)
+
                 print(f"OCR extracted {len(extracted_text)} characters")
 
                 return {
                     'text': extracted_text,
-                    'confidence': 0.85,  # AI generally has good accuracy
-                    'engine': 'ai-vision',
-                    'word_count': len(extracted_text.split())
+                    'confidence': 0.90,  # AI generally has good accuracy
+                    'engine': 'ai-vision-claude',
+                    'word_count': len(extracted_text.split()),
+                    'structured': True
                 }
         except httpx.TimeoutException:
             raise Exception("AI OCR timed out. Try with a smaller image.")
         except httpx.RequestError as e:
             raise Exception(f"Network error during AI OCR: {str(e)}")
+
+    def _clean_ocr_output(self, text: str) -> str:
+        """Clean up OCR output by removing common preambles."""
+        # Common preambles to remove
+        preambles = [
+            "Here is the extracted text:",
+            "Here's the extracted text:",
+            "Here is the structured content:",
+            "Here's the structured content:",
+            "Here are the notes:",
+            "Here's the markdown:",
+            "Extracted content:",
+            "BEGIN EXTRACTION:",
+        ]
+
+        cleaned = text.strip()
+        for preamble in preambles:
+            if cleaned.lower().startswith(preamble.lower()):
+                cleaned = cleaned[len(preamble):].strip()
+
+        # Remove leading/trailing code block markers if the whole thing is wrapped
+        if cleaned.startswith("```markdown") and cleaned.endswith("```"):
+            cleaned = cleaned[11:-3].strip()
+        elif cleaned.startswith("```") and cleaned.endswith("```"):
+            # Find the first newline after ```
+            first_newline = cleaned.find('\n')
+            if first_newline != -1:
+                cleaned = cleaned[first_newline+1:-3].strip()
+
+        return cleaned
 
     async def extract_text_from_image(
         self,

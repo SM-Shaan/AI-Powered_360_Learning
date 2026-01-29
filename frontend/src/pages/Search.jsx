@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { searchAPI } from '../services/api';
 import ReactMarkdown from 'react-markdown';
+
+// Storage key for persisting search results
+const SEARCH_STORAGE_KEY = 'ai_search_results';
 import {
   Search as SearchIcon,
   MessageSquareText,
@@ -15,7 +18,8 @@ import {
   AlertCircle,
   Lightbulb,
   ArrowRight,
-  FileText
+  FileText,
+  RotateCcw
 } from 'lucide-react';
 import { PageHeader, PageContainer, ContentCard, EmptyState } from '../components/ui/PageHeader';
 import { cn } from '../lib/utils';
@@ -87,15 +91,47 @@ const COLOR_CLASSES = {
 };
 
 const Search = () => {
-  const [activeMode, setActiveMode] = useState('ask');
-  const [query, setQuery] = useState('');
+  // Load saved state from localStorage
+  const loadSavedState = () => {
+    try {
+      const saved = localStorage.getItem(SEARCH_STORAGE_KEY);
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error('Failed to load saved search state:', e);
+    }
+    return null;
+  };
+
+  const savedState = loadSavedState();
+
+  const [activeMode, setActiveMode] = useState(savedState?.activeMode || 'ask');
+  const [query, setQuery] = useState(savedState?.query || '');
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
+  const [result, setResult] = useState(savedState?.result || null);
   const [error, setError] = useState('');
 
   // Filters
-  const [category, setCategory] = useState('');
-  const [contentType, setContentType] = useState('');
+  const [category, setCategory] = useState(savedState?.category || '');
+  const [contentType, setContentType] = useState(savedState?.contentType || '');
+
+  // Save state to localStorage when result changes
+  useEffect(() => {
+    const stateToSave = {
+      activeMode,
+      query,
+      result,
+      category,
+      contentType,
+      savedAt: new Date().toISOString()
+    };
+    try {
+      localStorage.setItem(SEARCH_STORAGE_KEY, JSON.stringify(stateToSave));
+    } catch (e) {
+      console.error('Failed to save search state:', e);
+    }
+  }, [result, activeMode, query, category, contentType]);
 
   const currentMode = SEARCH_MODES.find(m => m.id === activeMode);
   const colors = COLOR_CLASSES[currentMode.color];
@@ -432,28 +468,44 @@ const Search = () => {
             )}
 
             {/* Search Button */}
-            <button
-              onClick={handleSearch}
-              disabled={loading || !query.trim()}
-              className={cn(
-                "w-full py-3 rounded-xl font-semibold text-white transition-all duration-200 flex items-center justify-center gap-2",
-                !query.trim()
-                  ? "bg-gray-300 cursor-not-allowed"
-                  : `bg-gradient-to-r ${currentMode.gradient} hover:shadow-lg hover:scale-[1.01] active:scale-[0.99]`
+            <div className="flex gap-3">
+              <button
+                onClick={handleSearch}
+                disabled={loading || !query.trim()}
+                className={cn(
+                  "flex-1 py-3 rounded-xl font-semibold text-white transition-all duration-200 flex items-center justify-center gap-2",
+                  !query.trim()
+                    ? "bg-gray-300 cursor-not-allowed"
+                    : `bg-gradient-to-r ${currentMode.gradient} hover:shadow-lg hover:scale-[1.01] active:scale-[0.99]`
+                )}
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    {activeMode === 'ask' ? 'Thinking...' : 'Searching...'}
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-5 h-5" />
+                    {activeMode === 'ask' ? 'Get Answer' : 'Search'}
+                  </>
+                )}
+              </button>
+              {result && (
+                <button
+                  onClick={() => {
+                    setResult(null);
+                    setQuery('');
+                    setError('');
+                    localStorage.removeItem(SEARCH_STORAGE_KEY);
+                  }}
+                  className="px-4 py-3 rounded-xl font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-all duration-200 flex items-center gap-2"
+                >
+                  <RotateCcw className="w-5 h-5" />
+                  Clear
+                </button>
               )}
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  {activeMode === 'ask' ? 'Thinking...' : 'Searching...'}
-                </>
-              ) : (
-                <>
-                  <Send className="w-5 h-5" />
-                  {activeMode === 'ask' ? 'Get Answer' : 'Search'}
-                </>
-              )}
-            </button>
+            </div>
           </div>
 
           {/* Error */}

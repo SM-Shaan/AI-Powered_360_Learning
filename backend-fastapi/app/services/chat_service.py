@@ -448,6 +448,61 @@ class ChatService:
             print(f"Wikipedia error: {e}")
             return {"found": False, "articles": [], "combined_context": ""}
 
+    def _verify_grounding(self, response: str, sources: List[Dict]) -> Dict:
+        """
+        Verify which sources were actually used in the response.
+        Returns filtered sources and grounding score.
+        """
+        import re
+
+        response_lower = response.lower()
+        used_sources = []
+        unused_sources = []
+
+        for source in sources:
+            title = source.get('title', '')
+            title_lower = title.lower()
+
+            # Check if source was cited inline [Source: ...]
+            cited_pattern = f"\\[source:?\\s*{re.escape(title_lower)}\\]"
+            is_cited = bool(re.search(cited_pattern, response_lower, re.IGNORECASE))
+
+            # Check if title is mentioned in response
+            is_mentioned = title_lower in response_lower
+
+            # Check if key terms from title appear in response
+            title_words = [w for w in title_lower.split() if len(w) > 3]
+            terms_found = sum(1 for w in title_words if w in response_lower)
+            term_overlap = terms_found / len(title_words) if title_words else 0
+
+            if is_cited or is_mentioned or term_overlap > 0.5:
+                source['actually_used'] = True
+                source['citation_found'] = is_cited
+                used_sources.append(source)
+            else:
+                source['actually_used'] = False
+                unused_sources.append(source)
+
+        # Calculate grounding score
+        total_sources = len(sources)
+        used_count = len(used_sources)
+        grounding_score = used_count / total_sources if total_sources > 0 else 0
+
+        # Check for potential hallucination indicators
+        hallucination_phrases = [
+            "i think", "i believe", "probably", "might be",
+            "generally speaking", "in my opinion", "typically"
+        ]
+        hallucination_risk = sum(1 for phrase in hallucination_phrases if phrase in response_lower)
+
+        return {
+            'used_sources': used_sources,
+            'unused_sources': unused_sources,
+            'grounding_score': round(grounding_score, 2),
+            'hallucination_risk': 'low' if hallucination_risk < 2 else 'medium' if hallucination_risk < 4 else 'high',
+            'is_grounded': grounding_score > 0.3 or "don't have information" in response_lower
+        }
+
     def _detect_intent(self, message: str) -> Dict:
         """Detect user intent from message"""
         message_lower = message.lower()
@@ -616,25 +671,31 @@ class ChatService:
         course_context = await self._get_course_context(user_message)
         wiki_context = await self._get_wikipedia_context(user_message)
 
-        # Build system prompt
+        # Build system prompt with strict grounding requirements
         system_prompt = """You are an AI learning assistant for a university course platform.
-Your role is to help students learn by:
-1. Answering questions about course materials
-2. Explaining concepts clearly
-3. Providing examples and analogies
-4. Helping with problem-solving
-5. Generating study materials when requested
 
-IMPORTANT GUIDELINES:
-- Always prioritize course materials when available
-- Be accurate and educational
-- If you're not sure, say so
-- Reference specific sources when possible
-- Keep responses focused and helpful
-- Use markdown formatting for better readability
+CRITICAL GROUNDING RULES:
+1. ONLY answer based on the provided context (course materials or Wikipedia)
+2. If the context doesn't contain relevant information, say "I don't have information about this in the course materials"
+3. NEVER make up facts or information not present in the context
+4. When you use information from context, cite it inline like this: [Source: Title]
+5. If asked about something not in the context, acknowledge this clearly
 
-When course materials are provided, base your answers on them.
-When Wikipedia context is provided, use it to supplement your knowledge."""
+RESPONSE FORMAT:
+- Use markdown formatting for readability
+- Include inline citations [Source: ...] when referencing specific information
+- At the end, list which sources you actually used
+- If no relevant context was provided, state that clearly
+
+EXAMPLE:
+User: What is a binary tree?
+Response: A binary tree is a data structure where each node has at most two children [Source: Data Structures Lecture 5]. The left child is typically smaller and the right child is larger in a binary search tree [Source: Data Structures Lecture 5].
+
+Sources used: Data Structures Lecture 5
+
+If context is NOT relevant to the question, respond:
+"I don't have specific information about [topic] in the available course materials. Would you like me to explain based on general knowledge, or would you prefer to search for specific course content?"
+"""
 
         # Add context to the conversation
         context_message = ""
@@ -680,6 +741,10 @@ When Wikipedia context is provided, use it to supplement your knowledge."""
             response = await self._call_openrouter(api_messages, system_prompt)
             ai_message = response["content"]
 
+            # Verify grounding - check which sources were actually used
+            grounding_result = self._verify_grounding(ai_message, sources)
+            verified_sources = grounding_result['used_sources']
+
             # Store messages in database
             try:
                 # Save user message
@@ -691,15 +756,17 @@ When Wikipedia context is provided, use it to supplement your knowledge."""
                     'metadata': {}
                 }).execute()
 
-                # Save assistant message
+                # Save assistant message with verified sources only
                 supabase.table('messages').insert({
                     'conversation_id': conversation_id,
                     'role': 'assistant',
                     'content': ai_message,
-                    'sources': sources,
+                    'sources': verified_sources,
                     'metadata': {
                         'model': response.get('model', self.model),
-                        'tokens_used': response.get('usage', {}).get('total_tokens', 0)
+                        'tokens_used': response.get('usage', {}).get('total_tokens', 0),
+                        'grounding_score': grounding_result['grounding_score'],
+                        'is_grounded': grounding_result['is_grounded']
                     }
                 }).execute()
 
@@ -715,8 +782,15 @@ When Wikipedia context is provided, use it to supplement your knowledge."""
                 "success": True,
                 "conversation_id": conversation_id,
                 "message": ai_message,
-                "sources": sources,
+                "sources": verified_sources,  # Only return sources that were actually used
                 "intent": intent,
+                "grounding": {
+                    "score": grounding_result['grounding_score'],
+                    "is_grounded": grounding_result['is_grounded'],
+                    "hallucination_risk": grounding_result['hallucination_risk'],
+                    "sources_provided": len(sources),
+                    "sources_used": len(verified_sources)
+                },
                 "metadata": {
                     "model": response["model"],
                     "tokens_used": response["usage"].get("total_tokens", 0),

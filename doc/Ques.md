@@ -9,4 +9,5 @@
 6. Generic vs AST chunking?
 7. Chunking steps?
 8. What does indexing mean here? What it's role? 
-9. 
+9. How I implemented the RAG system?
+10. 

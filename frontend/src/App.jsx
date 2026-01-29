@@ -9,6 +9,7 @@ import Upload from './pages/Upload';
 import Generate from './pages/Generate';
 import Search from './pages/Search';
 import Chat from './pages/Chat';
+import Forum from './pages/Forum';
 import About from './pages/About';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -20,8 +21,8 @@ function Layout({ children }) {
   const location = useLocation();
 
   // Pages that have their own full-width layout
-  const fullWidthPages = ['/', '/about', '/chat'];
-  const isFullWidth = fullWidthPages.includes(location.pathname);
+  const fullWidthPages = ['/', '/about', '/chat', '/forum'];
+  const isFullWidth = fullWidthPages.includes(location.pathname) || location.pathname.startsWith('/forum');
 
   if (isFullWidth) {
     return <>{children}</>;
@@ -101,6 +102,16 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <Chat />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Protected routes - Community Forum (Bonus 3) */}
+          <Route
+            path="/forum"
+            element={
+              <ProtectedRoute>
+                <Forum />
               </ProtectedRoute>
             }
           />

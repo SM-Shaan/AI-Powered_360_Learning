@@ -22,7 +22,8 @@ import {
   Bot,
   ChevronRight,
   Settings,
-  HelpCircle
+  HelpCircle,
+  Users
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Button } from './ui/button';
@@ -169,6 +170,22 @@ function Navbar() {
               >
                 <BookOpen className="h-4 w-4" />
                 Browse
+              </Link>
+            )}
+
+            {/* Forum - Only for authenticated users */}
+            {isAuthenticated && (
+              <Link
+                to="/forum"
+                className={cn(
+                  "flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200",
+                  isActive('/forum') || location.pathname.startsWith('/forum')
+                    ? "text-emerald-600 bg-emerald-50"
+                    : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                )}
+              >
+                <Users className="h-4 w-4" />
+                Forum
               </Link>
             )}
 
@@ -471,6 +488,19 @@ function Navbar() {
               >
                 <BookOpen className="h-5 w-5" />
                 Browse Content
+              </Link>
+            )}
+
+            {isAuthenticated && (
+              <Link
+                to="/forum"
+                className={cn(
+                  "flex items-center gap-3 px-4 py-3 rounded-xl text-base font-medium transition-all",
+                  isActive('/forum') || location.pathname.startsWith('/forum') ? "bg-emerald-50 text-emerald-600" : "text-gray-700 hover:bg-gray-50"
+                )}
+              >
+                <Users className="h-5 w-5" />
+                Community Forum
               </Link>
             )}
 

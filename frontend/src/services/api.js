@@ -163,6 +163,31 @@ export const generationAPI = {
   getSupportedLanguages: () => api.get('/generate/supported-languages'),
 };
 
+// Validation API (Part 4)
+export const validationAPI = {
+  // Validate code (syntax, security, execution, AI evaluation)
+  validateCode: (code, language = 'python', testCode = null, validationLevel = 'full') =>
+    api.post('/validate/code', { code, language, test_code: testCode, validation_level: validationLevel }),
+
+  // Validate theory content (structure, grounding, AI evaluation)
+  validateTheory: (content, topic, contentIds = [], validationLevel = 'full') =>
+    api.post('/validate/theory', { content, topic, content_ids: contentIds, validation_level: validationLevel }),
+
+  // Validate any generated content
+  validateContent: (content, contentType, topic = null, language = null, validationLevel = 'full') =>
+    api.post('/validate/content', { content, content_type: contentType, topic, language, validation_level: validationLevel }),
+
+  // Quick syntax check (no auth required)
+  quickCheck: (code, language = 'python') =>
+    api.post(`/validate/quick-check?language=${language}`, code, {
+      headers: { 'Content-Type': 'text/plain' }
+    }),
+
+  // Get supported validation checks
+  getSupportedChecks: () =>
+    api.get('/validate/supported-checks'),
+};
+
 // Chat API (Part 5)
 export const chatAPI = {
   // Send a message
@@ -192,6 +217,62 @@ export const chatAPI = {
   // Get suggested prompts
   getSuggestions: () =>
     api.get('/chat/suggestions'),
+};
+
+// Forum API (Bonus 3 - Community Forum)
+export const forumAPI = {
+  // Posts
+  getPosts: (params = {}) => {
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        queryParams.append(key, value);
+      }
+    });
+    return api.get(`/forum/posts?${queryParams.toString()}`);
+  },
+
+  getPost: (postId) =>
+    api.get(`/forum/posts/${postId}`),
+
+  createPost: (data) =>
+    api.post('/forum/posts', data),
+
+  updatePost: (postId, data) =>
+    api.put(`/forum/posts/${postId}`, data),
+
+  deletePost: (postId) =>
+    api.delete(`/forum/posts/${postId}`),
+
+  // Comments
+  createComment: (postId, content, parentId = null) =>
+    api.post(`/forum/posts/${postId}/comments`, { content, parent_id: parentId }),
+
+  deleteComment: (commentId) =>
+    api.delete(`/forum/comments/${commentId}`),
+
+  // Voting
+  votePost: (postId, voteType) =>
+    api.post(`/forum/posts/${postId}/vote`, { vote_type: voteType }),
+
+  voteComment: (commentId, voteType) =>
+    api.post(`/forum/comments/${commentId}/vote`, { vote_type: voteType }),
+
+  // Accept answer
+  acceptAnswer: (postId, commentId) =>
+    api.post(`/forum/posts/${postId}/accept-answer`, { comment_id: commentId }),
+
+  // Bot
+  requestBotAnswer: (postId) =>
+    api.post(`/forum/posts/${postId}/bot-answer`),
+
+  // Tags
+  getPopularTags: (limit = 10) =>
+    api.get(`/forum/tags?limit=${limit}`),
+
+  // User posts
+  getMyPosts: (page = 1, perPage = 10) =>
+    api.get(`/forum/my-posts?page=${page}&per_page=${perPage}`),
 };
 
 export default api;
