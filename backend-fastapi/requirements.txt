@@ -11,3 +11,4 @@ aiofiles>=23.2.1
 PyPDF2>=3.0.1
 anthropic>=0.18.1
 httpx>=0.24.0
+pydantic[email]
