@@ -74,6 +74,15 @@ export const contentAPI = {
     headers: { 'Content-Type': 'multipart/form-data' }
   }),
 
+  // Upload handwritten notes with OCR (Admin only)
+  uploadHandwrittenNotes: (formData) => api.post('/content/handwritten-notes', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+
+  // Re-run OCR on existing handwritten notes (Admin only)
+  reprocessOCR: (id, enhanceImage = true) =>
+    api.post(`/content/handwritten-notes/${id}/reocr?enhance_image=${enhanceImage}`),
+
   // Update content metadata (Admin only)
   update: (id, data) => api.put(`/content/${id}`, data),
 
@@ -85,6 +94,12 @@ export const contentAPI = {
 
   // Get download URL
   getDownloadUrl: (id) => `${API_BASE_URL}/content/${id}/download`,
+
+  // Reprocess single content for search indexing (Admin only)
+  reprocess: (id) => api.post(`/content/${id}/reprocess`),
+
+  // Reprocess all content for search indexing (Admin only)
+  reprocessAll: () => api.post('/content/reprocess-all'),
 };
 
 // Search API (Part 2)
@@ -146,6 +161,37 @@ export const generationAPI = {
 
   // Get supported programming languages
   getSupportedLanguages: () => api.get('/generate/supported-languages'),
+};
+
+// Chat API (Part 5)
+export const chatAPI = {
+  // Send a message
+  sendMessage: (message, conversationId = 'new') =>
+    api.post('/chat/message', { message, conversation_id: conversationId }),
+
+  // Get all conversations
+  getConversations: () =>
+    api.get('/chat/conversations'),
+
+  // Get a specific conversation
+  getConversation: (conversationId) =>
+    api.get(`/chat/conversations/${conversationId}`),
+
+  // Create a new conversation
+  createConversation: () =>
+    api.post('/chat/conversations/new'),
+
+  // Delete a conversation
+  deleteConversation: (conversationId) =>
+    api.delete(`/chat/conversations/${conversationId}`),
+
+  // Clear conversation history
+  clearConversation: (conversationId) =>
+    api.post(`/chat/conversations/${conversationId}/clear`),
+
+  // Get suggested prompts
+  getSuggestions: () =>
+    api.get('/chat/suggestions'),
 };
 
 export default api;

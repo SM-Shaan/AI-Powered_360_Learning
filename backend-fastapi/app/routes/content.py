@@ -5,6 +5,8 @@ from app.models.schemas import ContentUpdate, ContentResponse, ContentStats
 from app.core.supabase import get_supabase
 from app.core.security import get_current_user, get_current_user_optional, require_admin
 from app.core.config import settings
+from app.services.content_processing_service import get_content_processing_service
+from app.services.ocr_service import get_ocr_service
 import uuid
 import json
 import os
@@ -18,6 +20,9 @@ ALLOWED_EXTENSIONS = {
     '.cs', '.go', '.rs', '.rb', '.php', '.sql', '.sh',
     '.ipynb', '.json', '.html', '.css', '.xml', '.yaml', '.yml'
 }
+
+# Image extensions for handwritten notes
+IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.webp'}
 
 def validate_file(filename: str) -> bool:
     ext = os.path.splitext(filename)[1].lower()
@@ -230,7 +235,256 @@ async def upload_content(
     content = result.data[0]
     content["tags"] = tags_list
 
+    # Process content for search indexing (extract text, chunk, generate embeddings)
+    try:
+        processing_service = get_content_processing_service()
+        processing_result = await processing_service.process_content(
+            content_id=content_id,
+            file_content=file_content,
+            file_name=file.filename,
+            mime_type=file.content_type or "application/octet-stream"
+        )
+        content["processing"] = processing_result
+    except Exception as e:
+        # Log but don't fail the upload if processing fails
+        print(f"Content processing warning: {e}")
+        content["processing"] = {"success": False, "error": str(e)}
+
     return {"success": True, "data": content}
+
+
+@router.post("/handwritten-notes", response_model=dict)
+async def upload_handwritten_notes(
+    file: UploadFile = File(...),
+    title: str = Form(...),
+    category: str = Form(...),
+    description: Optional[str] = Form(None),
+    topic: Optional[str] = Form(None),
+    week: Optional[int] = Form(None),
+    tags: Optional[str] = Form(None),
+    enhance_image: bool = Form(True),
+    admin: dict = Depends(require_admin)
+):
+    """
+    Upload handwritten notes image and extract text using OCR.
+
+    This endpoint:
+    1. Accepts image files (jpg, png, etc.)
+    2. Extracts text using OCR (EasyOCR)
+    3. Stores both the original image and extracted text
+    4. Indexes the extracted text for search
+
+    Args:
+        file: Image file of handwritten notes
+        title: Title for the content
+        category: 'theory' or 'lab'
+        description: Optional description
+        topic: Optional topic
+        week: Optional week number
+        tags: Comma-separated tags
+        enhance_image: Whether to enhance image before OCR (default: True)
+    """
+    # Validate file is an image
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in IMAGE_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid file type. Allowed: {', '.join(IMAGE_EXTENSIONS)}"
+        )
+
+    # Check file size
+    file_content = await file.read()
+    if len(file_content) > settings.max_file_size:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File too large. Maximum size is {settings.max_file_size // (1024*1024)}MB"
+        )
+
+    supabase = get_supabase()
+    content_id = str(uuid.uuid4())
+
+    # Perform OCR to extract text
+    try:
+        ocr_service = get_ocr_service(engine="easyocr")
+        ocr_result = await ocr_service.extract_text_from_image(
+            file_content,
+            enhance=enhance_image
+        )
+        extracted_text = ocr_result.get('text', '')
+        ocr_confidence = ocr_result.get('avg_confidence', 0)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"OCR processing failed: {str(e)}"
+        )
+
+    # Upload original image to Supabase Storage
+    storage_path = f"{category}/handwritten/{content_id}{ext}"
+    try:
+        supabase.storage.from_("materials").upload(
+            storage_path,
+            file_content,
+            {"content-type": file.content_type}
+        )
+        file_url = supabase.storage.from_("materials").get_public_url(storage_path)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload file: {str(e)}"
+        )
+
+    # Parse tags
+    tags_list = []
+    if tags:
+        tags_list = [t.strip() for t in tags.split(",") if t.strip()]
+    # Add handwritten tag for easy filtering
+    if "handwritten" not in [t.lower() for t in tags_list]:
+        tags_list.append("handwritten")
+
+    # Create content record
+    content_data = {
+        "id": content_id,
+        "title": title,
+        "description": description or "",
+        "category": category,
+        "content_type": "notes",
+        "file_path": storage_path,
+        "file_name": file.filename,
+        "file_size": len(file_content),
+        "mime_type": file.content_type,
+        "topic": topic,
+        "week": week,
+        "tags": json.dumps(tags_list),
+        "uploaded_by": admin["id"],
+        "is_handwritten": True,
+        "ocr_text": extracted_text,
+        "ocr_confidence": ocr_confidence
+    }
+
+    result = supabase.table("content").insert(content_data).execute()
+
+    if not result.data:
+        # Clean up uploaded file
+        try:
+            supabase.storage.from_("materials").remove([storage_path])
+        except:
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create content record"
+        )
+
+    content = result.data[0]
+    content["tags"] = tags_list
+
+    # Process extracted text for search indexing
+    if extracted_text:
+        try:
+            processing_service = get_content_processing_service()
+            processing_result = await processing_service.process_handwritten_content(
+                content_id=content_id,
+                extracted_text=extracted_text,
+                original_filename=file.filename
+            )
+            content["processing"] = processing_result
+        except Exception as e:
+            print(f"Content processing warning: {e}")
+            content["processing"] = {"success": False, "error": str(e)}
+
+    content["ocr_result"] = {
+        "text_length": len(extracted_text),
+        "confidence": ocr_confidence,
+        "engine": "easyocr"
+    }
+
+    return {"success": True, "data": content}
+
+
+@router.post("/handwritten-notes/{content_id}/reocr")
+async def reprocess_handwritten_ocr(
+    content_id: str,
+    enhance_image: bool = Query(True),
+    admin: dict = Depends(require_admin)
+):
+    """Re-run OCR on an existing handwritten notes image"""
+    supabase = get_supabase()
+
+    # Get content
+    result = supabase.table("content").select("*").eq("id", content_id).execute()
+    if not result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Content not found"
+        )
+
+    content = result.data[0]
+
+    # Verify it's a handwritten note
+    if not content.get("is_handwritten"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Content is not a handwritten note"
+        )
+
+    # Download image from storage
+    try:
+        file_content = supabase.storage.from_("materials").download(content["file_path"])
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Image not found in storage: {str(e)}"
+        )
+
+    # Re-run OCR
+    try:
+        ocr_service = get_ocr_service(engine="easyocr")
+        ocr_result = await ocr_service.extract_text_from_image(
+            file_content,
+            enhance=enhance_image
+        )
+        extracted_text = ocr_result.get('text', '')
+        ocr_confidence = ocr_result.get('avg_confidence', 0)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"OCR processing failed: {str(e)}"
+        )
+
+    # Update content record
+    supabase.table("content").update({
+        "ocr_text": extracted_text,
+        "ocr_confidence": ocr_confidence
+    }).eq("id", content_id).execute()
+
+    # Delete existing chunks and reprocess
+    try:
+        supabase.table("content_chunks").delete().eq("content_id", content_id).execute()
+    except:
+        pass
+
+    # Reprocess for search
+    processing_result = None
+    if extracted_text:
+        try:
+            processing_service = get_content_processing_service()
+            processing_result = await processing_service.process_handwritten_content(
+                content_id=content_id,
+                extracted_text=extracted_text,
+                original_filename=content["file_name"]
+            )
+        except Exception as e:
+            processing_result = {"success": False, "error": str(e)}
+
+    return {
+        "success": True,
+        "data": {
+            "content_id": content_id,
+            "text_length": len(extracted_text),
+            "confidence": ocr_confidence,
+            "processing": processing_result
+        }
+    }
+
 
 @router.put("/{content_id}", response_model=dict)
 async def update_content(
@@ -312,6 +566,106 @@ async def delete_content(
     supabase.table("content").delete().eq("id", content_id).execute()
 
     return {"success": True, "message": "Content deleted successfully"}
+
+@router.post("/{content_id}/reprocess")
+async def reprocess_content(
+    content_id: str,
+    admin: dict = Depends(require_admin)
+):
+    """Reprocess content for search indexing (Admin only)"""
+    supabase = get_supabase()
+
+    # Get content
+    result = supabase.table("content").select("*").eq("id", content_id).execute()
+    if not result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Content not found"
+        )
+
+    content = result.data[0]
+
+    # Download file from storage
+    try:
+        file_content = supabase.storage.from_("materials").download(content["file_path"])
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"File not found in storage: {str(e)}"
+        )
+
+    # Delete existing chunks for this content
+    try:
+        supabase.table("content_chunks").delete().eq("content_id", content_id).execute()
+    except Exception as e:
+        print(f"Warning: Could not delete existing chunks: {e}")
+
+    # Process content
+    try:
+        processing_service = get_content_processing_service()
+        processing_result = await processing_service.process_content(
+            content_id=content_id,
+            file_content=file_content,
+            file_name=content["file_name"],
+            mime_type=content.get("mime_type", "application/octet-stream")
+        )
+        return {"success": True, "data": processing_result}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Processing failed: {str(e)}"
+        )
+
+
+@router.post("/reprocess-all")
+async def reprocess_all_content(
+    admin: dict = Depends(require_admin)
+):
+    """Reprocess all content for search indexing (Admin only)"""
+    supabase = get_supabase()
+
+    # Get all content
+    result = supabase.table("content").select("id, file_path, file_name, mime_type").execute()
+    if not result.data:
+        return {"success": True, "message": "No content to process"}
+
+    results = []
+    for content in result.data:
+        try:
+            # Download file
+            file_content = supabase.storage.from_("materials").download(content["file_path"])
+
+            # Delete existing chunks
+            supabase.table("content_chunks").delete().eq("content_id", content["id"]).execute()
+
+            # Process
+            processing_service = get_content_processing_service()
+            processing_result = await processing_service.process_content(
+                content_id=content["id"],
+                file_content=file_content,
+                file_name=content["file_name"],
+                mime_type=content.get("mime_type", "application/octet-stream")
+            )
+            results.append({
+                "content_id": content["id"],
+                "file_name": content["file_name"],
+                **processing_result
+            })
+        except Exception as e:
+            results.append({
+                "content_id": content["id"],
+                "file_name": content["file_name"],
+                "success": False,
+                "error": str(e)
+            })
+
+    return {
+        "success": True,
+        "processed": len([r for r in results if r.get("success")]),
+        "failed": len([r for r in results if not r.get("success")]),
+        "details": results
+    }
+
 
 @router.get("/{content_id}/download")
 async def download_content(

@@ -8,6 +8,7 @@ import Browse from './pages/Browse';
 import Upload from './pages/Upload';
 import Generate from './pages/Generate';
 import Search from './pages/Search';
+import Chat from './pages/Chat';
 import About from './pages/About';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -19,7 +20,7 @@ function Layout({ children }) {
   const location = useLocation();
 
   // Pages that have their own full-width layout
-  const fullWidthPages = ['/', '/about'];
+  const fullWidthPages = ['/', '/about', '/chat'];
   const isFullWidth = fullWidthPages.includes(location.pathname);
 
   if (isFullWidth) {
@@ -90,6 +91,16 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <Search />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Protected routes - Chat Interface (Part 5) */}
+          <Route
+            path="/chat"
+            element={
+              <ProtectedRoute>
+                <Chat />
               </ProtectedRoute>
             }
           />

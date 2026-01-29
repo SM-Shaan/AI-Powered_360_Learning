@@ -549,3 +549,199 @@ async def get_index_status(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Status error: {str(e)}"
         )
+
+
+@router.get("/debug/search-pipeline", response_model=dict)
+async def debug_search_pipeline(
+    test_query: str = Query(default="test", description="Test query to run"),
+    admin: dict = Depends(require_admin)
+):
+    """
+    Diagnostic endpoint to debug the search pipeline.
+
+    Checks:
+    1. Embedding API is working
+    2. RPC function exists in Supabase
+    3. Chunks have embeddings
+    4. Search returns results
+
+    Admin only.
+    """
+    from app.core.supabase import get_supabase_admin
+
+    diagnostics = {
+        "embedding_api": {"status": "unknown"},
+        "rpc_function": {"status": "unknown"},
+        "chunks_with_embeddings": {"status": "unknown"},
+        "search_test": {"status": "unknown"}
+    }
+
+    supabase = get_supabase_admin()
+    embedding_service = get_embedding_service()
+
+    # 1. Test embedding API
+    try:
+        test_embedding = await embedding_service.embed_query(test_query)
+        is_hash_based = all(abs(v) <= 1.0 for v in test_embedding[:10])
+
+        # Check if embedding looks like hash-based fallback (values uniformly distributed)
+        # Real embeddings have more variance and specific patterns
+        variance = sum((v - sum(test_embedding[:100])/100)**2 for v in test_embedding[:100]) / 100
+
+        diagnostics["embedding_api"] = {
+            "status": "ok",
+            "dimension": len(test_embedding),
+            "preview": test_embedding[:5],
+            "variance": round(variance, 6),
+            "likely_real_embedding": variance > 0.01  # Hash embeddings have ~0.33 variance
+        }
+    except Exception as e:
+        diagnostics["embedding_api"] = {
+            "status": "error",
+            "error": str(e)
+        }
+
+    # 2. Test RPC function exists
+    try:
+        if diagnostics["embedding_api"]["status"] == "ok":
+            test_emb = test_embedding
+        else:
+            test_emb = [0.0] * 768
+
+        rpc_result = supabase.rpc(
+            'search_similar_chunks',
+            {
+                'query_embedding': test_emb,
+                'match_threshold': 0.0,  # Very low threshold
+                'match_count': 5,
+                'filter_category': None,
+                'filter_content_type': None,
+                'filter_week': None
+            }
+        ).execute()
+
+        diagnostics["rpc_function"] = {
+            "status": "ok",
+            "results_returned": len(rpc_result.data) if rpc_result.data else 0
+        }
+    except Exception as e:
+        error_msg = str(e)
+        if "function" in error_msg.lower() and "does not exist" in error_msg.lower():
+            diagnostics["rpc_function"] = {
+                "status": "missing",
+                "error": "RPC function 'search_similar_chunks' not found. Run supabase_vector_setup.sql",
+                "fix": "Execute the SQL in backend-fastapi/supabase_vector_setup.sql in your Supabase SQL Editor"
+            }
+        else:
+            diagnostics["rpc_function"] = {
+                "status": "error",
+                "error": error_msg
+            }
+
+    # 3. Check chunks have embeddings
+    try:
+        total_chunks = supabase.table('content_chunks').select('id', count='exact').execute()
+        chunks_with_emb = supabase.table('content_chunks').select('id', count='exact').not_.is_('embedding', 'null').execute()
+
+        total = total_chunks.count or 0
+        with_emb = chunks_with_emb.count or 0
+
+        diagnostics["chunks_with_embeddings"] = {
+            "status": "ok" if with_emb == total and total > 0 else "warning",
+            "total_chunks": total,
+            "chunks_with_embedding": with_emb,
+            "chunks_without_embedding": total - with_emb,
+            "percentage": round((with_emb / total * 100) if total > 0 else 0, 1)
+        }
+
+        if total == 0:
+            diagnostics["chunks_with_embeddings"]["message"] = "No chunks found. Upload content first."
+        elif with_emb < total:
+            diagnostics["chunks_with_embeddings"]["message"] = f"{total - with_emb} chunks missing embeddings. Run /api/content/reprocess-all"
+    except Exception as e:
+        diagnostics["chunks_with_embeddings"] = {
+            "status": "error",
+            "error": str(e)
+        }
+
+    # 4. Run actual search test
+    try:
+        retrieval_service = get_retrieval_service()
+        results = await retrieval_service.search_chunks(
+            query=test_query,
+            top_k=5,
+            threshold=0.3  # Low threshold for testing
+        )
+
+        diagnostics["search_test"] = {
+            "status": "ok" if results else "no_results",
+            "query": test_query,
+            "results_count": len(results),
+            "top_similarities": [round(r.get('similarity', 0), 3) for r in results[:3]] if results else []
+        }
+
+        if not results:
+            diagnostics["search_test"]["message"] = "No results found. Check if RPC function exists and chunks have embeddings."
+    except Exception as e:
+        diagnostics["search_test"] = {
+            "status": "error",
+            "error": str(e)
+        }
+
+    # Overall status
+    all_ok = all(d.get("status") == "ok" for d in diagnostics.values())
+
+    return {
+        "success": True,
+        "overall_status": "healthy" if all_ok else "issues_found",
+        "diagnostics": diagnostics,
+        "recommendations": _get_recommendations(diagnostics)
+    }
+
+
+def _get_recommendations(diagnostics: dict) -> list:
+    """Generate recommendations based on diagnostics."""
+    recommendations = []
+
+    if diagnostics["embedding_api"].get("status") != "ok":
+        recommendations.append({
+            "priority": "high",
+            "issue": "Embedding API not working",
+            "fix": "Check HUGGINGFACE_TOKEN in .env file"
+        })
+    elif not diagnostics["embedding_api"].get("likely_real_embedding"):
+        recommendations.append({
+            "priority": "high",
+            "issue": "Embeddings appear to be hash-based fallbacks (not semantic)",
+            "fix": "Ensure HUGGINGFACE_TOKEN is set correctly in .env"
+        })
+
+    if diagnostics["rpc_function"].get("status") == "missing":
+        recommendations.append({
+            "priority": "high",
+            "issue": "RPC function not found in database",
+            "fix": "Run backend-fastapi/supabase_vector_setup.sql in Supabase SQL Editor"
+        })
+
+    chunks_info = diagnostics.get("chunks_with_embeddings", {})
+    if chunks_info.get("total_chunks", 0) == 0:
+        recommendations.append({
+            "priority": "medium",
+            "issue": "No content chunks found",
+            "fix": "Upload content via /api/content endpoint"
+        })
+    elif chunks_info.get("chunks_without_embedding", 0) > 0:
+        recommendations.append({
+            "priority": "medium",
+            "issue": f"{chunks_info.get('chunks_without_embedding')} chunks missing embeddings",
+            "fix": "Call POST /api/content/reprocess-all to regenerate embeddings"
+        })
+
+    if not recommendations:
+        recommendations.append({
+            "priority": "info",
+            "issue": "None",
+            "message": "Search pipeline is healthy"
+        })
+
+    return recommendations

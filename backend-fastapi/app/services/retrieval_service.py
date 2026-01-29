@@ -263,14 +263,13 @@ class RetrievalService:
         category: Optional[str] = None,
         content_type: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """Perform keyword search on content"""
+        """Perform keyword search on content and content_chunks"""
         supabase = get_supabase_admin()
+        results = []
 
-        # Build query with text search
-        db_query = supabase.table('content').select('*')
-
-        # Add text search filter
+        # 1. Search in content metadata (title, description, topic)
         search_term = f"%{query}%"
+        db_query = supabase.table('content').select('*')
         db_query = db_query.or_(
             f"title.ilike.{search_term},"
             f"description.ilike.{search_term},"
@@ -283,11 +282,8 @@ class RetrievalService:
             db_query = db_query.eq('content_type', content_type)
 
         db_query = db_query.limit(top_k)
-
         result = db_query.execute()
 
-        # Add keyword score based on match quality
-        results = []
         query_lower = query.lower()
         for item in (result.data or []):
             score = 0
@@ -301,7 +297,84 @@ class RetrievalService:
             item['keyword_score'] = min(score, 1.0) if score > 0 else 0.2
             results.append(item)
 
+        # 2. Also search directly in content_chunks for text matches
+        # This is crucial for finding code/function names
+        chunk_results = await self._search_chunk_text(query, top_k, category)
+        results.extend(chunk_results)
+
         return results
+
+    async def _search_chunk_text(
+        self,
+        query: str,
+        top_k: int,
+        category: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Search directly in chunk_text for keyword matches"""
+        supabase = get_supabase_admin()
+
+        # Extract meaningful search terms
+        import re
+        terms = re.findall(r'\w+', query)
+        terms = [t for t in terms if len(t) >= 3]  # Skip short words
+
+        if not terms:
+            return []
+
+        results = []
+        seen_chunks = set()
+
+        for term in terms[:5]:  # Search top 5 terms
+            try:
+                # Search in chunk_text
+                response = supabase.table('content_chunks').select(
+                    'id, content_id, chunk_text, chunk_type, chunk_index'
+                ).ilike('chunk_text', f'%{term}%').limit(top_k).execute()
+
+                if not response.data:
+                    continue
+
+                # Get content metadata for matching chunks
+                content_ids = list(set(c['content_id'] for c in response.data))
+                content_result = supabase.table('content').select(
+                    'id, title, category, content_type'
+                ).in_('id', content_ids).execute()
+
+                content_map = {c['id']: c for c in (content_result.data or [])}
+
+                for chunk in response.data:
+                    if chunk['id'] in seen_chunks:
+                        continue
+
+                    content_meta = content_map.get(chunk['content_id'], {})
+
+                    # Apply category filter
+                    if category and content_meta.get('category') != category:
+                        continue
+
+                    seen_chunks.add(chunk['id'])
+
+                    # Calculate relevance based on match quality
+                    chunk_text_lower = chunk['chunk_text'].lower()
+                    term_lower = term.lower()
+                    match_count = chunk_text_lower.count(term_lower)
+
+                    results.append({
+                        'chunk_id': chunk['id'],
+                        'content_id': chunk['content_id'],
+                        'chunk_text': chunk['chunk_text'],
+                        'chunk_type': chunk['chunk_type'],
+                        'content_title': content_meta.get('title', ''),
+                        'content_category': content_meta.get('category', ''),
+                        'content_type': content_meta.get('content_type', ''),
+                        'keyword_score': min(0.3 + (match_count * 0.1), 0.9)
+                    })
+
+            except Exception as e:
+                print(f"Chunk text search error for term '{term}': {e}")
+                continue
+
+        return results[:top_k]
 
     async def search_code(
         self,

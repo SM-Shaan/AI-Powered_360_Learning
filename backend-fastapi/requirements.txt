@@ -11,3 +11,12 @@ aiofiles>=23.2.1
 PyPDF2>=3.0.1
 anthropic>=0.18.1
 httpx>=0.24.0
+
+# OCR for handwritten notes digitization
+easyocr>=1.7.0
+Pillow>=10.0.0
+numpy>=1.24.0
+
+# Optional: TrOCR for advanced handwriting recognition (uncomment if needed)
+# transformers>=4.35.0
+# torch>=2.0.0

@@ -1017,6 +1017,249 @@ Returns list of supported programming languages for code generation.
 
 ---
 
+# Chat Endpoints (Part 5)
+
+## Send Chat Message
+```
+POST /api/chat/message
+```
+
+Send a message to the AI chat assistant.
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+**Request Body:**
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| message | string | Yes | - | User message (1-4000 chars) |
+| conversation_id | string | No | "new" | Conversation ID or "new" for new conversation |
+
+**Example Request:**
+```json
+{
+  "message": "Explain how binary search works",
+  "conversation_id": "new"
+}
+```
+
+**Example Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "conversation_id": "550e8400-e29b-41d4-a716-446655440000",
+    "message": "# Binary Search\n\nBinary search is an efficient algorithm for finding an item in a sorted list...",
+    "sources": [
+      {
+        "type": "course",
+        "title": "Algorithms Lecture 3",
+        "relevance": 0.85
+      },
+      {
+        "type": "wikipedia",
+        "title": "Binary search algorithm"
+      }
+    ],
+    "intent": {
+      "type": "explain",
+      "confidence": 0.8
+    },
+    "metadata": {
+      "model": "anthropic/claude-sonnet-4",
+      "tokens_used": 450,
+      "course_context_used": true,
+      "wikipedia_context_used": true
+    }
+  }
+}
+```
+
+---
+
+## Get User Conversations
+```
+GET /api/chat/conversations
+```
+
+Get all conversations for the current user.
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Example Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "created_at": "2024-01-29T10:00:00Z",
+      "message_count": 5,
+      "last_message": "How does quicksort compare to..."
+    }
+  ]
+}
+```
+
+---
+
+## Get Conversation History
+```
+GET /api/chat/conversations/{conversation_id}
+```
+
+Get a specific conversation with full message history.
+
+**Path Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| conversation_id | string | Conversation ID |
+
+**Example Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "created_at": "2024-01-29T10:00:00Z",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Explain binary search",
+        "timestamp": "2024-01-29T10:00:00Z"
+      },
+      {
+        "role": "assistant",
+        "content": "Binary search is...",
+        "timestamp": "2024-01-29T10:00:05Z",
+        "sources": [...]
+      }
+    ]
+  }
+}
+```
+
+---
+
+## Create New Conversation
+```
+POST /api/chat/conversations/new
+```
+
+Create a new conversation.
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Example Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "conversation_id": "550e8400-e29b-41d4-a716-446655440000",
+    "message": "New conversation created"
+  }
+}
+```
+
+---
+
+## Delete Conversation
+```
+DELETE /api/chat/conversations/{conversation_id}
+```
+
+Delete a conversation.
+
+**Path Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| conversation_id | string | Conversation ID |
+
+**Example Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Conversation deleted"
+}
+```
+
+---
+
+## Clear Conversation
+```
+POST /api/chat/conversations/{conversation_id}/clear
+```
+
+Clear all messages in a conversation but keep the conversation.
+
+**Path Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| conversation_id | string | Conversation ID |
+
+**Example Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Conversation cleared"
+}
+```
+
+---
+
+## Get Suggested Prompts
+```
+GET /api/chat/suggestions
+```
+
+Get suggested prompts for the chat.
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Example Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "category": "Search",
+      "prompts": [
+        "Find materials about data structures",
+        "Search for content on machine learning"
+      ]
+    },
+    {
+      "category": "Explain",
+      "prompts": [
+        "Explain how binary search works",
+        "What is object-oriented programming?"
+      ]
+    },
+    {
+      "category": "Generate",
+      "prompts": [
+        "Generate a quiz about sorting algorithms",
+        "Create study notes on databases"
+      ]
+    }
+  ]
+}
+```
+
+---
+
 # Utility Endpoints
 
 ## Health Check

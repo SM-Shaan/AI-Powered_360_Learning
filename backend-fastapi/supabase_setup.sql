@@ -133,3 +133,50 @@ VALUES (
     '$2b$12$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi',
     'student'
 ) ON CONFLICT (email) DO NOTHING;
+
+-- =====================================================
+-- Handwritten Notes Digitization (Bonus Feature)
+-- =====================================================
+
+-- Add columns to content table for handwritten notes
+ALTER TABLE content ADD COLUMN IF NOT EXISTS is_handwritten BOOLEAN DEFAULT FALSE;
+ALTER TABLE content ADD COLUMN IF NOT EXISTS ocr_text TEXT;
+ALTER TABLE content ADD COLUMN IF NOT EXISTS ocr_confidence FLOAT;
+
+-- Index for filtering handwritten notes
+CREATE INDEX IF NOT EXISTS idx_content_is_handwritten ON content(is_handwritten);
+
+-- Full-text search on OCR extracted text
+CREATE INDEX IF NOT EXISTS idx_content_ocr_text ON content USING gin(to_tsvector('english', COALESCE(ocr_text, '')));
+
+-- Function to search in OCR text
+CREATE OR REPLACE FUNCTION search_handwritten_notes(
+    search_query TEXT,
+    category_filter VARCHAR(20) DEFAULT NULL,
+    min_confidence FLOAT DEFAULT 0.3
+)
+RETURNS TABLE (
+    content_id UUID,
+    title VARCHAR(255),
+    ocr_text TEXT,
+    ocr_confidence FLOAT,
+    relevance FLOAT
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        c.id,
+        c.title,
+        c.ocr_text,
+        c.ocr_confidence,
+        ts_rank(to_tsvector('english', COALESCE(c.ocr_text, '')), plainto_tsquery('english', search_query)) AS relevance
+    FROM content c
+    WHERE c.is_handwritten = TRUE
+      AND c.ocr_confidence >= min_confidence
+      AND (category_filter IS NULL OR c.category = category_filter)
+      AND to_tsvector('english', COALESCE(c.ocr_text, '')) @@ plainto_tsquery('english', search_query)
+    ORDER BY relevance DESC;
+END;
+$$;

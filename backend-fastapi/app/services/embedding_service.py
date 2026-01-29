@@ -129,12 +129,15 @@ class EmbeddingService:
             raise ValueError(f"Unexpected embedding response format: {type(result)}")
 
         except Exception as e:
-            # Check if it's an auth error or API unavailable
+            # Only use fallback for specific API availability issues
             error_str = str(e).lower()
-            if any(x in error_str for x in ["401", "403", "unauthorized", "failed", "error"]):
+            # Be specific about when to use fallback - only auth/availability issues
+            if any(x in error_str for x in ["401", "403", "unauthorized", "connection", "timeout", "503"]):
                 print(f"HuggingFace API issue: {e}")
                 print("Using fallback embedding. For semantic search, set HUGGINGFACE_TOKEN in .env")
                 return await self._generate_simple_embedding(prepared_text)
+            # For other errors (parsing, unexpected response), raise to surface the issue
+            print(f"Embedding generation error (not using fallback): {e}")
             raise
 
     async def embed_query(self, query: str) -> List[float]:
@@ -193,7 +196,9 @@ class EmbeddingService:
                     raise ValueError(f"Unexpected batch response format")
 
             except Exception as e:
-                if "401" in str(e) or "Unauthorized" in str(e):
+                error_str = str(e).lower()
+                # Only use fallback for auth/availability issues
+                if any(x in error_str for x in ["401", "403", "unauthorized", "connection", "timeout", "503"]):
                     # Fallback for each text in batch
                     for text in prepared_batch:
                         emb = await self._generate_simple_embedding(text)
