@@ -32,9 +32,8 @@ class ChatService:
         self.api_key = settings.openrouter_api_key
         self.base_url = settings.openrouter_base_url
         self.model = "anthropic/claude-sonnet-4"
-
-        # In-memory conversation store (replace with DB for production)
-        self.conversations: Dict[str, List[Dict]] = {}
+        # Use database for persistent storage
+        self._use_db = True
 
     def _ensure_api_key(self):
         """Ensure OpenRouter API key is available"""
@@ -482,31 +481,99 @@ class ChatService:
 
     def create_conversation(self, user_id: str) -> str:
         """Create a new conversation and return its ID"""
+        from app.core.supabase import get_supabase_admin
+        supabase = get_supabase_admin()
+
         conv_id = str(uuid.uuid4())
-        self.conversations[conv_id] = {
-            "user_id": user_id,
-            "messages": [],
-            "created_at": datetime.utcnow().isoformat(),
-            "context_cache": {}
-        }
-        return conv_id
+        try:
+            supabase.table('conversations').insert({
+                'id': conv_id,
+                'user_id': user_id,
+                'title': 'New Conversation'
+            }).execute()
+            return conv_id
+        except Exception as e:
+            print(f"Error creating conversation: {e}")
+            return conv_id  # Return ID anyway, will work with fallback
 
     def get_conversation(self, conv_id: str) -> Optional[Dict]:
-        """Get conversation by ID"""
-        return self.conversations.get(conv_id)
+        """Get conversation by ID with messages"""
+        from app.core.supabase import get_supabase_admin
+        supabase = get_supabase_admin()
+
+        try:
+            # Get conversation
+            conv_result = supabase.table('conversations').select('*').eq('id', conv_id).execute()
+            if not conv_result.data:
+                return None
+
+            conv = conv_result.data[0]
+
+            # Get messages
+            msg_result = supabase.table('messages').select('*').eq(
+                'conversation_id', conv_id
+            ).order('created_at').execute()
+
+            messages = []
+            for msg in (msg_result.data or []):
+                messages.append({
+                    'role': msg['role'],
+                    'content': msg['content'],
+                    'timestamp': msg['created_at'],
+                    'sources': msg.get('sources', []),
+                    'metadata': msg.get('metadata', {})
+                })
+
+            return {
+                'id': conv['id'],
+                'user_id': conv['user_id'],
+                'messages': messages,
+                'created_at': conv['created_at'],
+                'updated_at': conv.get('updated_at')
+            }
+        except Exception as e:
+            print(f"Error getting conversation: {e}")
+            return None
 
     def get_user_conversations(self, user_id: str) -> List[Dict]:
         """Get all conversations for a user"""
-        user_convs = []
-        for conv_id, conv in self.conversations.items():
-            if conv.get("user_id") == user_id:
+        from app.core.supabase import get_supabase_admin
+        supabase = get_supabase_admin()
+
+        try:
+            # Get conversations
+            result = supabase.table('conversations').select('*').eq(
+                'user_id', user_id
+            ).order('updated_at', desc=True).execute()
+
+            user_convs = []
+            for conv in (result.data or []):
+                # Get last message for this conversation
+                msg_result = supabase.table('messages').select('content').eq(
+                    'conversation_id', conv['id']
+                ).order('created_at', desc=True).limit(1).execute()
+
+                last_message = ""
+                if msg_result.data:
+                    last_message = msg_result.data[0]['content'][:100]
+
+                # Get message count
+                count_result = supabase.table('messages').select(
+                    'id', count='exact'
+                ).eq('conversation_id', conv['id']).execute()
+
                 user_convs.append({
-                    "id": conv_id,
-                    "created_at": conv.get("created_at"),
-                    "message_count": len(conv.get("messages", [])),
-                    "last_message": conv.get("messages", [{}])[-1].get("content", "")[:100] if conv.get("messages") else ""
+                    'id': conv['id'],
+                    'created_at': conv['created_at'],
+                    'updated_at': conv.get('updated_at', conv['created_at']),
+                    'message_count': count_result.count or 0,
+                    'last_message': last_message
                 })
-        return sorted(user_convs, key=lambda x: x.get("created_at", ""), reverse=True)
+
+            return user_convs
+        except Exception as e:
+            print(f"Error getting user conversations: {e}")
+            return []
 
     async def chat(
         self,
@@ -525,11 +592,22 @@ class ChatService:
         Returns:
             Response with AI message, sources, and metadata
         """
-        # Create new conversation if needed
-        if conversation_id == "new" or conversation_id not in self.conversations:
-            conversation_id = self.create_conversation(user_id)
+        from app.core.supabase import get_supabase_admin
+        supabase = get_supabase_admin()
 
-        conv = self.conversations[conversation_id]
+        # Create new conversation if needed
+        if conversation_id == "new":
+            conversation_id = self.create_conversation(user_id)
+        else:
+            # Check if conversation exists
+            conv = self.get_conversation(conversation_id)
+            if not conv:
+                conversation_id = self.create_conversation(user_id)
+
+        # Get conversation with messages
+        conv = self.get_conversation(conversation_id)
+        if not conv:
+            conv = {"messages": []}
 
         # Detect intent
         intent = self._detect_intent(user_message)
@@ -602,18 +680,36 @@ When Wikipedia context is provided, use it to supplement your knowledge."""
             response = await self._call_openrouter(api_messages, system_prompt)
             ai_message = response["content"]
 
-            # Store messages in conversation (without context for cleaner history)
-            conv["messages"].append({
-                "role": "user",
-                "content": user_message,
-                "timestamp": datetime.utcnow().isoformat()
-            })
-            conv["messages"].append({
-                "role": "assistant",
-                "content": ai_message,
-                "timestamp": datetime.utcnow().isoformat(),
-                "sources": sources
-            })
+            # Store messages in database
+            try:
+                # Save user message
+                supabase.table('messages').insert({
+                    'conversation_id': conversation_id,
+                    'role': 'user',
+                    'content': user_message,
+                    'sources': [],
+                    'metadata': {}
+                }).execute()
+
+                # Save assistant message
+                supabase.table('messages').insert({
+                    'conversation_id': conversation_id,
+                    'role': 'assistant',
+                    'content': ai_message,
+                    'sources': sources,
+                    'metadata': {
+                        'model': response.get('model', self.model),
+                        'tokens_used': response.get('usage', {}).get('total_tokens', 0)
+                    }
+                }).execute()
+
+                # Update conversation's updated_at
+                supabase.table('conversations').update({
+                    'title': user_message[:100]  # Use first message as title
+                }).eq('id', conversation_id).execute()
+
+            except Exception as db_error:
+                print(f"Error saving messages to DB: {db_error}")
 
             return {
                 "success": True,
@@ -638,18 +734,33 @@ When Wikipedia context is provided, use it to supplement your knowledge."""
             }
 
     def clear_conversation(self, conversation_id: str) -> bool:
-        """Clear a conversation's history"""
-        if conversation_id in self.conversations:
-            self.conversations[conversation_id]["messages"] = []
+        """Clear a conversation's history (delete all messages)"""
+        from app.core.supabase import get_supabase_admin
+        supabase = get_supabase_admin()
+
+        try:
+            supabase.table('messages').delete().eq(
+                'conversation_id', conversation_id
+            ).execute()
             return True
-        return False
+        except Exception as e:
+            print(f"Error clearing conversation: {e}")
+            return False
 
     def delete_conversation(self, conversation_id: str) -> bool:
-        """Delete a conversation"""
-        if conversation_id in self.conversations:
-            del self.conversations[conversation_id]
+        """Delete a conversation and all its messages"""
+        from app.core.supabase import get_supabase_admin
+        supabase = get_supabase_admin()
+
+        try:
+            # Messages will be deleted via CASCADE
+            supabase.table('conversations').delete().eq(
+                'id', conversation_id
+            ).execute()
             return True
-        return False
+        except Exception as e:
+            print(f"Error deleting conversation: {e}")
+            return False
 
 
 # Singleton instance

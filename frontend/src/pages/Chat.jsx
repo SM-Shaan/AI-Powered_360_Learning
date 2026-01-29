@@ -37,17 +37,42 @@ const Chat = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [conversationId, setConversationId] = useState('new');
+  const [conversationId, setConversationId] = useState(() => {
+    // Restore conversation ID from localStorage on initial load
+    return localStorage.getItem('chat_conversation_id') || 'new';
+  });
   const [conversations, setConversations] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
+  // Save conversation ID to localStorage whenever it changes
   useEffect(() => {
-    loadConversations();
-    loadSuggestions();
+    if (conversationId && conversationId !== 'new') {
+      localStorage.setItem('chat_conversation_id', conversationId);
+    } else {
+      localStorage.removeItem('chat_conversation_id');
+    }
+  }, [conversationId]);
+
+  // Initial load: fetch conversations and restore saved conversation
+  useEffect(() => {
+    const initializeChat = async () => {
+      await loadConversations();
+      await loadSuggestions();
+
+      // Restore saved conversation if exists
+      const savedConvId = localStorage.getItem('chat_conversation_id');
+      if (savedConvId && savedConvId !== 'new') {
+        await loadConversation(savedConvId);
+      }
+      setInitialLoadDone(true);
+    };
+
+    initializeChat();
   }, []);
 
   useEffect(() => {
@@ -84,6 +109,12 @@ const Chat = () => {
       setMessages(data.messages || []);
     } catch (err) {
       console.error('Failed to load conversation:', err);
+      // If conversation not found (e.g., server restarted), clear saved ID
+      if (err.response?.status === 404 || err.response?.status === 403) {
+        localStorage.removeItem('chat_conversation_id');
+        setConversationId('new');
+        setMessages([]);
+      }
     }
   };
 
@@ -141,6 +172,7 @@ const Chat = () => {
   const startNewChat = () => {
     setConversationId('new');
     setMessages([]);
+    localStorage.removeItem('chat_conversation_id');
     inputRef.current?.focus();
   };
 

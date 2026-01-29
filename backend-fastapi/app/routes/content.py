@@ -305,14 +305,16 @@ async def upload_handwritten_notes(
 
     # Perform OCR to extract text
     try:
-        ocr_service = get_ocr_service(engine="easyocr")
+        ocr_service = get_ocr_service()
         ocr_result = await ocr_service.extract_text_from_image(
             file_content,
             enhance=enhance_image
         )
         extracted_text = ocr_result.get('text', '')
-        ocr_confidence = ocr_result.get('avg_confidence', 0)
+        ocr_confidence = ocr_result.get('confidence', ocr_result.get('avg_confidence', 0))
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"OCR processing failed: {str(e)}"
@@ -394,7 +396,7 @@ async def upload_handwritten_notes(
     content["ocr_result"] = {
         "text_length": len(extracted_text),
         "confidence": ocr_confidence,
-        "engine": "easyocr"
+        "engine": ocr_result.get('engine', 'unknown')
     }
 
     return {"success": True, "data": content}
@@ -437,7 +439,7 @@ async def reprocess_handwritten_ocr(
 
     # Re-run OCR
     try:
-        ocr_service = get_ocr_service(engine="easyocr")
+        ocr_service = get_ocr_service()
         ocr_result = await ocr_service.extract_text_from_image(
             file_content,
             enhance=enhance_image
