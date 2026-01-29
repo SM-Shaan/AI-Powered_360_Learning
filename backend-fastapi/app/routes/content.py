@@ -235,20 +235,25 @@ async def upload_content(
     content = result.data[0]
     content["tags"] = tags_list
 
-    # Process content for search indexing (extract text, chunk, generate embeddings)
-    try:
-        processing_service = get_content_processing_service()
-        processing_result = await processing_service.process_content(
-            content_id=content_id,
-            file_content=file_content,
-            file_name=file.filename,
-            mime_type=file.content_type or "application/octet-stream"
-        )
-        content["processing"] = processing_result
-    except Exception as e:
-        # Log but don't fail the upload if processing fails
-        print(f"Content processing warning: {e}")
-        content["processing"] = {"success": False, "error": str(e)}
+    # Process content for search indexing IN BACKGROUND
+    # This makes upload return immediately while indexing happens async
+    import asyncio
+    async def background_indexing():
+        try:
+            processing_service = get_content_processing_service()
+            await processing_service.process_content(
+                content_id=content_id,
+                file_content=file_content,
+                file_name=file.filename,
+                mime_type=file.content_type or "application/octet-stream"
+            )
+            print(f"Background indexing completed for {content_id}")
+        except Exception as e:
+            print(f"Background indexing failed for {content_id}: {e}")
+
+    # Start background task (non-blocking)
+    asyncio.create_task(background_indexing())
+    content["processing"] = {"status": "processing_in_background"}
 
     return {"success": True, "data": content}
 
@@ -379,19 +384,25 @@ async def upload_handwritten_notes(
     content = result.data[0]
     content["tags"] = tags_list
 
-    # Process extracted text for search indexing
+    # Process extracted text for search indexing IN BACKGROUND
+    # This makes upload return immediately while indexing happens async
+    import asyncio
     if extracted_text:
-        try:
-            processing_service = get_content_processing_service()
-            processing_result = await processing_service.process_handwritten_content(
-                content_id=content_id,
-                extracted_text=extracted_text,
-                original_filename=file.filename
-            )
-            content["processing"] = processing_result
-        except Exception as e:
-            print(f"Content processing warning: {e}")
-            content["processing"] = {"success": False, "error": str(e)}
+        async def background_indexing():
+            try:
+                processing_service = get_content_processing_service()
+                await processing_service.process_handwritten_content(
+                    content_id=content_id,
+                    extracted_text=extracted_text,
+                    original_filename=file.filename
+                )
+                print(f"Background indexing completed for {content_id}")
+            except Exception as e:
+                print(f"Background indexing failed for {content_id}: {e}")
+
+        # Start background task (non-blocking)
+        asyncio.create_task(background_indexing())
+        content["processing"] = {"status": "processing_in_background"}
 
     content["ocr_result"] = {
         "text_length": len(extracted_text),

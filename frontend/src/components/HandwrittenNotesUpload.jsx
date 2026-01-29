@@ -171,9 +171,10 @@ function HandwrittenNotesUpload({ onUploadSuccess }) {
           <div
             onDrop={handleDrop}
             onDragOver={handleDragOver}
+            onClick={() => !preview && fileInputRef.current?.click()}
             className={cn(
-              "border-2 border-dashed rounded-lg p-6 text-center transition-colors",
-              preview ? "border-blue-300 bg-blue-50" : "border-gray-300 hover:border-blue-400"
+              "relative border-2 border-dashed rounded-lg p-6 text-center transition-colors cursor-pointer",
+              preview ? "border-blue-300 bg-blue-50" : "border-gray-300 hover:border-blue-400 hover:bg-gray-50"
             )}
           >
             {preview ? (
@@ -186,7 +187,10 @@ function HandwrittenNotesUpload({ onUploadSuccess }) {
                   />
                   <button
                     type="button"
-                    onClick={clearFile}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      clearFile();
+                    }}
                     className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
                   >
                     <X className="h-4 w-4" />
@@ -201,14 +205,7 @@ function HandwrittenNotesUpload({ onUploadSuccess }) {
                 <p className="text-sm text-gray-400">Supports: JPG, PNG, BMP, TIFF, WebP</p>
               </div>
             )}
-            <input
-              ref={fileInputRef}
-              type="file"
-              onChange={handleFileChange}
-              accept="image/jpeg,image/png,image/bmp,image/tiff,image/webp"
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-              style={{ position: 'absolute', top: 0, left: 0 }}
-            />
+            {/* Hidden file input - only triggered programmatically */}
             <input
               ref={fileInputRef}
               type="file"
@@ -221,7 +218,10 @@ function HandwrittenNotesUpload({ onUploadSuccess }) {
                 type="button"
                 variant="outline"
                 className="mt-4"
-                onClick={() => fileInputRef.current?.click()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  fileInputRef.current?.click();
+                }}
               >
                 Select Image
               </Button>
