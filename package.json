@@ -1,0 +1,17 @@
+{
+  "name": "ai-powered-learning-platform",
+  "version": "1.0.0",
+  "description": "AI-Powered Supplementary Learning Platform for University Courses",
+  "scripts": {
+    "backend": "cd backend && npm start",
+    "frontend": "cd frontend && npm run dev",
+    "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
+    "install:all": "cd backend && npm install && cd ../frontend && npm install"
+  },
+  "keywords": ["learning", "education", "ai", "cms"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
