@@ -18,14 +18,14 @@ Part 4 implements a comprehensive validation and evaluation system for AI-genera
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Validation Service                            │
-│                (validation_service.py)                           │
+│                    Validation Service                           │
+│                (validation_service.py)                          │
 ├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │
-│  │    Code      │  │   Theory     │  │   AI Evaluation      │  │
-│  │  Validation  │  │  Validation  │  │   (Claude API)       │  │
-│  └──────────────┘  └──────────────┘  └──────────────────────┘  │
+│                                                                 │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐   │
+│  │    Code      │  │   Theory     │  │   AI Evaluation      │   │
+│  │  Validation  │  │  Validation  │  │   (Claude API)       │   │
+│  └──────────────┘  └──────────────┘  └──────────────────────┘   │
 │         │                 │                     │               │
 │         ▼                 ▼                     ▼               │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │
