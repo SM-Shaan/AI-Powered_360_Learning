@@ -5,6 +5,7 @@ supabase>=2.4.0
 python-dotenv>=1.0.0
 pydantic>=2.5.0
 pydantic-settings>=2.1.0
+pydantic[email]
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
 aiofiles>=23.2.1
@@ -13,10 +14,6 @@ anthropic>=0.18.1
 httpx>=0.24.0
 
 # OCR for handwritten notes digitization
-easyocr>=1.7.0
+pytesseract>=0.3.10
 Pillow>=10.0.0
 numpy>=1.24.0
-
-# Optional: TrOCR for advanced handwriting recognition (uncomment if needed)
-# transformers>=4.35.0
-# torch>=2.0.0
