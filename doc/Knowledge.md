@@ -306,3 +306,35 @@
   ├──────────────────────────┼─────────────────────────────┤
   │ Simple CRUD              │ Supabase client handles it  │
   └──────────────────────────┴─────────────────────────────┘
+
+
+
+  #  Why to add Huggingface_token? 
+
+● Without HUGGINGFACE_TOKEN:
+  - Uses hash-based fallback embeddings (not semantic)
+  - Search works but matches are based on text similarity, not meaning
+  - "machine learning" won't find "neural networks" even though they're related
+
+  With HUGGINGFACE_TOKEN:
+  - Uses Nomic AI semantic embeddings (768-dim vectors)
+  - True semantic understanding - finds conceptually related content
+  - "machine learning" WILL find "neural networks", "deep learning", etc.
+  - Much better search quality
+
+  Example:
+  ┌─────────────────────────┬────────────────────────┬──────────────────────────────┐
+  │          Query          │     Without Token      │          With Token          │
+  ├─────────────────────────┼────────────────────────┼──────────────────────────────┤
+  │ "How to store big data" │ Only finds exact words │ Finds HBase, HDFS, databases │
+  ├─────────────────────────┼────────────────────────┼──────────────────────────────┤
+  │ "sun protection"        │ Nothing                │ Finds UV Index content       │
+  ├─────────────────────────┼────────────────────────┼──────────────────────────────┤
+  │ "coding examples"       │ Nothing                │ Finds Lab materials          │
+  └─────────────────────────┴────────────────────────┴──────────────────────────────┘
+  Get a free token:
+  1. Go to https://huggingface.co/settings/tokens
+  2. Create account (free)
+  3. Generate token
+  4. Add to .env:
+  HUGGINGFACE_TOKEN=hf_xxxxxxxxx

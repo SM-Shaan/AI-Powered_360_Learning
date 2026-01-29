@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     openrouter_api_key: Optional[str] = None
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
+    # HuggingFace (for embeddings)
+    huggingface_token: Optional[str] = None
+
     # File uploads
     max_file_size: int = 50 * 1024 * 1024  # 50MB
     upload_dir: str = "uploads"

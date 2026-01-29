@@ -87,6 +87,45 @@ export const contentAPI = {
   getDownloadUrl: (id) => `${API_BASE_URL}/content/${id}/download`,
 };
 
+// Search API (Part 2)
+export const searchAPI = {
+  // Semantic search
+  semantic: (query, options = {}) =>
+    api.post('/search/semantic', { query, top_k: 10, threshold: 0.5, ...options }),
+
+  // Hybrid search (keyword + semantic)
+  hybrid: (query, options = {}) =>
+    api.post('/search/hybrid', { query, top_k: 10, keyword_weight: 0.3, semantic_weight: 0.7, ...options }),
+
+  // Code search
+  code: (query, language = null, topK = 5) =>
+    api.post('/search/code', { query, language, top_k: topK }),
+
+  // RAG question answering
+  ask: (question, options = {}) =>
+    api.post('/search/ask', { question, max_context_chunks: 5, include_sources: true, ...options }),
+
+  // Topic explanation
+  explain: (topic, category = null, difficulty = 'intermediate') =>
+    api.post(`/search/explain?topic=${encodeURIComponent(topic)}&difficulty=${difficulty}${category ? `&category=${category}` : ''}`),
+
+  // Find similar content
+  similar: (contentId, topK = 5) =>
+    api.get(`/search/similar/${contentId}?top_k=${topK}`),
+
+  // Summarize content
+  summarize: (contentId, length = 'medium') =>
+    api.post(`/search/summarize/${contentId}?length=${length}`),
+
+  // Test embedding
+  testEmbedding: (text) =>
+    api.get(`/search/test-embedding?text=${encodeURIComponent(text)}`),
+
+  // Get supported features
+  getFeatures: () =>
+    api.get('/search/supported-features'),
+};
+
 // Generation API (Part 3)
 export const generationAPI = {
   // Generate theory notes

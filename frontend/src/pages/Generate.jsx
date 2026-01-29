@@ -362,12 +362,30 @@ const Generate = () => {
 
         {/* Sources */}
         {result.sources && result.sources.length > 0 && (
-          <div className="mb-4 text-sm text-gray-600">
-            <span className="font-medium">Sources:</span>{' '}
+          <div className="mb-4 text-sm space-y-2">
             {result.sources.map((source, idx) => (
-              <span key={idx}>
-                {source.type === 'wikipedia' && source.articles.join(', ')}
-              </span>
+              <div key={idx}>
+                {source.type === 'course_materials' && source.items && (
+                  <div className="bg-green-50 border border-green-200 rounded p-2">
+                    <span className="font-medium text-green-800">Course Materials:</span>
+                    <ul className="mt-1 text-green-700">
+                      {source.items.map((item, i) => (
+                        <li key={i} className="flex items-center gap-2">
+                          <span>{item.title}</span>
+                          <span className="text-xs bg-green-200 px-1 rounded">{item.category}</span>
+                          <span className="text-xs text-green-600">{Math.round(item.relevance * 100)}% relevant</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {source.type === 'wikipedia' && source.articles && (
+                  <div className="bg-blue-50 border border-blue-200 rounded p-2">
+                    <span className="font-medium text-blue-800">Wikipedia:</span>
+                    <span className="ml-2 text-blue-700">{source.articles.join(', ')}</span>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         )}
@@ -443,8 +461,15 @@ const Generate = () => {
 
         {/* Metadata */}
         {result.metadata && (
-          <div className="mt-2 text-xs text-gray-500">
-            Model: {result.metadata.model} | Tokens: {result.metadata.tokens_used}
+          <div className="mt-2 text-xs text-gray-500 flex items-center gap-3">
+            <span>Model: {result.metadata.model}</span>
+            <span>Tokens: {result.metadata.tokens_used}</span>
+            {result.metadata.internal_context_used && (
+              <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded">Course Context</span>
+            )}
+            {result.metadata.external_context_used && (
+              <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded">Wikipedia Context</span>
+            )}
           </div>
         )}
       </div>
@@ -455,7 +480,7 @@ const Generate = () => {
     <div className="max-w-4xl mx-auto p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-800">AI Content Generator</h1>
-        <p className="text-gray-600">Generate learning materials using AI with Wikipedia context</p>
+        <p className="text-gray-600">Generate learning materials using AI with course materials + Wikipedia context</p>
       </div>
 
       {/* Tabs */}

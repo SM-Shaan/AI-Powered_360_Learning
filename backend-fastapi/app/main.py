@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from app.routes import auth_router, content_router, generation_router, validation_router
+from app.routes import auth_router, content_router, generation_router, validation_router, search_router
 from app.core.config import settings
 import traceback
 
@@ -39,6 +39,7 @@ app.include_router(auth_router, prefix="/api")
 app.include_router(content_router, prefix="/api")
 app.include_router(generation_router, prefix="/api")
 app.include_router(validation_router, prefix="/api")
+app.include_router(search_router, prefix="/api")
 
 @app.get("/")
 async def root():

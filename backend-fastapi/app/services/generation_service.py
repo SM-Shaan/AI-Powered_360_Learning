@@ -1,12 +1,16 @@
 """
 AI Generation Service - Part 3
-Generates learning materials using OpenRouter API with external context
+Generates learning materials using OpenRouter API with internal + external context
+
+Internal Context: Course materials via Part 2 semantic search (RAG)
+External Context: Wikipedia via MCP-style wrapper
 """
 
 import httpx
 from typing import Optional, Dict, List
 from app.core.config import settings
 from app.services.wikipedia_service import get_wikipedia_service
+from app.services.retrieval_service import get_retrieval_service
 import json
 
 
@@ -18,6 +22,79 @@ class GenerationService:
         self.base_url = settings.openrouter_base_url
         # Use Claude Sonnet via OpenRouter
         self.model = "anthropic/claude-sonnet-4"
+
+    async def _get_internal_context(
+        self,
+        topic: str,
+        category: Optional[str] = None,
+        max_chunks: int = 5
+    ) -> Dict:
+        """
+        Fetch internal context from course materials using Part 2 semantic search.
+
+        Args:
+            topic: Topic to search for
+            category: Filter by category (theory/lab)
+            max_chunks: Maximum chunks to retrieve
+
+        Returns:
+            Dict with found status, context text, and sources
+        """
+        try:
+            retrieval_service = get_retrieval_service()
+
+            # Search for relevant chunks in course materials
+            chunks = await retrieval_service.search_chunks(
+                query=topic,
+                top_k=max_chunks,
+                threshold=0.4,
+                category=category
+            )
+
+            if not chunks:
+                return {
+                    "found": False,
+                    "context": "",
+                    "sources": []
+                }
+
+            # Build context from chunks
+            context_parts = []
+            sources = []
+
+            for chunk in chunks:
+                source_title = chunk.get('content_title', 'Course Material')
+                chunk_text = chunk.get('chunk_text', '')
+                similarity = chunk.get('similarity', 0)
+
+                # Only include reasonably relevant chunks
+                if similarity >= 0.4:
+                    context_parts.append(f"[From: {source_title}]\n{chunk_text}")
+
+                    # Track unique sources
+                    source_info = {
+                        "title": source_title,
+                        "content_id": chunk.get('content_id'),
+                        "category": chunk.get('content_category'),
+                        "relevance": round(similarity, 3)
+                    }
+                    if source_info not in sources:
+                        sources.append(source_info)
+
+            return {
+                "found": len(context_parts) > 0,
+                "context": "\n\n---\n\n".join(context_parts),
+                "sources": sources
+            }
+
+        except Exception as e:
+            print(f"Error fetching internal context: {e}")
+            return {
+                "found": False,
+                "context": "",
+                "sources": [],
+                "error": str(e)
+            }
 
     def _ensure_api_key(self):
         """Ensure OpenRouter API key is available"""
@@ -74,7 +151,8 @@ class GenerationService:
         topic: str,
         additional_context: Optional[str] = None,
         difficulty: str = "intermediate",
-        include_examples: bool = True
+        include_examples: bool = True,
+        use_internal_context: bool = True
     ) -> Dict:
         """
         Generate theory reading notes for a topic
@@ -84,11 +162,17 @@ class GenerationService:
             additional_context: Extra context to include
             difficulty: beginner, intermediate, or advanced
             include_examples: Whether to include examples
+            use_internal_context: Whether to search course materials
 
         Returns:
             Generated notes with metadata
         """
-        # Fetch external context from Wikipedia
+        # Fetch INTERNAL context from course materials (Part 2)
+        internal_context = {"found": False, "context": "", "sources": []}
+        if use_internal_context:
+            internal_context = await self._get_internal_context(topic, category="theory")
+
+        # Fetch EXTERNAL context from Wikipedia
         wiki_service = get_wikipedia_service()
         wiki_context = await wiki_service.get_context_for_topic(topic)
 
@@ -99,20 +183,34 @@ comprehensive, well-structured learning materials for university students. Your 
 - Well-organized with logical flow
 - Include key concepts and definitions
 - Academically rigorous but accessible
-- Include practical examples where appropriate"""
+- Include practical examples where appropriate
+
+IMPORTANT: When course materials are provided, prioritize and ground your content in those materials.
+The course-specific content should take precedence over general Wikipedia information."""
 
         context_section = ""
-        if wiki_context.get("found"):
-            context_section = f"""
-## Reference Material from Wikipedia:
-{wiki_context['combined_context']}
 
-Use this reference material to ground your notes in factual information."""
+        # Internal context (course materials) - PRIORITY
+        if internal_context.get("found"):
+            context_section = f"""
+## Course Materials (Primary Source):
+{internal_context['context']}
+
+Base your notes primarily on these course materials."""
+
+        # External context (Wikipedia) - SUPPLEMENTARY
+        if wiki_context.get("found"):
+            context_section += f"""
+
+## Reference Material from Wikipedia (Supplementary):
+{wiki_context['combined_context'][:2500]}
+
+Use this for additional context where course materials don't cover."""
 
         if additional_context:
             context_section += f"""
 
-## Additional Course Context:
+## Additional Context:
 {additional_context}"""
 
         user_prompt = f"""Create comprehensive study notes on the topic: "{topic}"
@@ -135,18 +233,31 @@ Format the output in clean Markdown."""
         try:
             response = await self._call_openrouter(system_prompt, user_prompt)
 
+            # Combine sources
+            sources = []
+            if internal_context.get("sources"):
+                sources.append({
+                    "type": "course_materials",
+                    "items": internal_context["sources"]
+                })
+            if wiki_context.get("articles"):
+                sources.append({
+                    "type": "wikipedia",
+                    "articles": [a["title"] for a in wiki_context.get("articles", [])]
+                })
+
             return {
                 "success": True,
                 "type": "theory_notes",
                 "topic": topic,
                 "difficulty": difficulty,
                 "content": response["content"],
-                "sources": [
-                    {"type": "wikipedia", "articles": [a["title"] for a in wiki_context.get("articles", [])]}
-                ],
+                "sources": sources,
                 "metadata": {
                     "model": response["model"],
-                    "tokens_used": response["usage"].get("completion_tokens", 0)
+                    "tokens_used": response["usage"].get("completion_tokens", 0),
+                    "internal_context_used": internal_context.get("found", False),
+                    "external_context_used": wiki_context.get("found", False)
                 }
             }
         except Exception as e:
@@ -161,7 +272,8 @@ Format the output in clean Markdown."""
         self,
         topic: str,
         num_slides: int = 10,
-        additional_context: Optional[str] = None
+        additional_context: Optional[str] = None,
+        use_internal_context: bool = True
     ) -> Dict:
         """
         Generate slide presentation outline for a topic
@@ -170,11 +282,17 @@ Format the output in clean Markdown."""
             topic: Topic for the presentation
             num_slides: Target number of slides
             additional_context: Extra context to include
+            use_internal_context: Whether to search course materials
 
         Returns:
             Slide outline with content for each slide
         """
-        # Fetch external context
+        # Fetch INTERNAL context from course materials
+        internal_context = {"found": False, "context": "", "sources": []}
+        if use_internal_context:
+            internal_context = await self._get_internal_context(topic, category="theory")
+
+        # Fetch EXTERNAL context
         wiki_service = get_wikipedia_service()
         wiki_context = await wiki_service.get_context_for_topic(topic)
 
@@ -183,16 +301,24 @@ Create clear, visually-oriented slide content that:
 - Has one main idea per slide
 - Uses bullet points effectively
 - Includes speaker notes for elaboration
-- Follows good presentation design principles"""
+- Follows good presentation design principles
+
+IMPORTANT: When course materials are provided, base your slides primarily on that content."""
 
         context_section = ""
-        if wiki_context.get("found"):
+        if internal_context.get("found"):
             context_section = f"""
-Reference Material:
-{wiki_context['combined_context'][:3000]}"""
+Course Materials (Primary):
+{internal_context['context'][:3000]}"""
+
+        if wiki_context.get("found"):
+            context_section += f"""
+
+Wikipedia Reference (Supplementary):
+{wiki_context['combined_context'][:2000]}"""
 
         if additional_context:
-            context_section += f"\n\nCourse Context:\n{additional_context}"
+            context_section += f"\n\nAdditional Context:\n{additional_context}"
 
         user_prompt = f"""Create a {num_slides}-slide presentation outline on: "{topic}"
 
@@ -231,18 +357,31 @@ Start with a title slide and end with a summary/Q&A slide."""
             except:
                 slides = content  # Return raw if parsing fails
 
+            # Combine sources
+            sources = []
+            if internal_context.get("sources"):
+                sources.append({
+                    "type": "course_materials",
+                    "items": internal_context["sources"]
+                })
+            if wiki_context.get("articles"):
+                sources.append({
+                    "type": "wikipedia",
+                    "articles": [a["title"] for a in wiki_context.get("articles", [])]
+                })
+
             return {
                 "success": True,
                 "type": "slides",
                 "topic": topic,
                 "num_slides": num_slides,
                 "slides": slides,
-                "sources": [
-                    {"type": "wikipedia", "articles": [a["title"] for a in wiki_context.get("articles", [])]}
-                ],
+                "sources": sources,
                 "metadata": {
                     "model": response["model"],
-                    "tokens_used": response["usage"].get("completion_tokens", 0)
+                    "tokens_used": response["usage"].get("completion_tokens", 0),
+                    "internal_context_used": internal_context.get("found", False),
+                    "external_context_used": wiki_context.get("found", False)
                 }
             }
         except Exception as e:
@@ -259,7 +398,8 @@ Start with a title slide and end with a summary/Q&A slide."""
         language: str = "python",
         difficulty: str = "intermediate",
         include_comments: bool = True,
-        include_tests: bool = True
+        include_tests: bool = True,
+        use_internal_context: bool = True
     ) -> Dict:
         """
         Generate lab code examples for a topic
@@ -270,11 +410,21 @@ Start with a title slide and end with a summary/Q&A slide."""
             difficulty: beginner, intermediate, or advanced
             include_comments: Add explanatory comments
             include_tests: Include test cases
+            use_internal_context: Whether to search course materials
 
         Returns:
             Generated code with explanations
         """
-        # Fetch external context
+        # Fetch INTERNAL context from course materials (lab category)
+        internal_context = {"found": False, "context": "", "sources": []}
+        if use_internal_context:
+            internal_context = await self._get_internal_context(
+                f"{topic} {language}",
+                category="lab",
+                max_chunks=5
+            )
+
+        # Fetch EXTERNAL context
         wiki_service = get_wikipedia_service()
         wiki_context = await wiki_service.get_context_for_topic(f"{topic} programming {language}")
 
@@ -284,13 +434,24 @@ Create well-structured, educational code that:
 - Follows {language} best practices and conventions
 - Includes clear, educational comments
 - Demonstrates the concept effectively
-- Is appropriate for university-level learning"""
+- Is appropriate for university-level learning
+
+IMPORTANT: When course lab materials are provided, follow the coding style and patterns used in those materials.
+Adapt examples to be consistent with the course's approach."""
 
         context_section = ""
-        if wiki_context.get("found"):
+        if internal_context.get("found"):
             context_section = f"""
-Reference Material:
-{wiki_context['combined_context'][:2000]}"""
+Course Lab Materials (Follow this style):
+{internal_context['context'][:3000]}
+
+Use similar patterns and coding style as shown in the course materials."""
+
+        if wiki_context.get("found"):
+            context_section += f"""
+
+Wikipedia Reference (Supplementary):
+{wiki_context['combined_context'][:1500]}"""
 
         user_prompt = f"""Create a {language} code example demonstrating: "{topic}"
 
@@ -312,6 +473,19 @@ Ensure all code is syntactically correct and can be run directly."""
         try:
             response = await self._call_openrouter(system_prompt, user_prompt)
 
+            # Combine sources
+            sources = []
+            if internal_context.get("sources"):
+                sources.append({
+                    "type": "course_materials",
+                    "items": internal_context["sources"]
+                })
+            if wiki_context.get("articles"):
+                sources.append({
+                    "type": "wikipedia",
+                    "articles": [a["title"] for a in wiki_context.get("articles", [])]
+                })
+
             return {
                 "success": True,
                 "type": "lab_code",
@@ -319,13 +493,13 @@ Ensure all code is syntactically correct and can be run directly."""
                 "language": language,
                 "difficulty": difficulty,
                 "content": response["content"],
-                "sources": [
-                    {"type": "wikipedia", "articles": [a["title"] for a in wiki_context.get("articles", [])]}
-                ],
+                "sources": sources,
                 "metadata": {
                     "model": response["model"],
                     "tokens_used": response["usage"].get("completion_tokens", 0),
-                    "language": language
+                    "language": language,
+                    "internal_context_used": internal_context.get("found", False),
+                    "external_context_used": wiki_context.get("found", False)
                 }
             }
         except Exception as e:
@@ -341,7 +515,8 @@ Ensure all code is syntactically correct and can be run directly."""
         topic: str,
         num_questions: int = 5,
         question_types: List[str] = None,
-        difficulty: str = "intermediate"
+        difficulty: str = "intermediate",
+        use_internal_context: bool = True
     ) -> Dict:
         """
         Generate quiz questions for a topic
@@ -351,6 +526,7 @@ Ensure all code is syntactically correct and can be run directly."""
             num_questions: Number of questions
             question_types: Types of questions (mcq, short_answer, true_false)
             difficulty: beginner, intermediate, or advanced
+            use_internal_context: Whether to search course materials
 
         Returns:
             Quiz questions with answers
@@ -358,7 +534,12 @@ Ensure all code is syntactically correct and can be run directly."""
         if question_types is None:
             question_types = ["mcq", "short_answer", "true_false"]
 
-        # Fetch external context
+        # Fetch INTERNAL context from course materials
+        internal_context = {"found": False, "context": "", "sources": []}
+        if use_internal_context:
+            internal_context = await self._get_internal_context(topic, max_chunks=6)
+
+        # Fetch EXTERNAL context
         wiki_service = get_wikipedia_service()
         wiki_context = await wiki_service.get_context_for_topic(topic)
 
@@ -367,13 +548,24 @@ Create questions that:
 - Test understanding, not just memorization
 - Have clear, unambiguous answers
 - Are appropriate for university-level students
-- Include helpful explanations for the answers"""
+- Include helpful explanations for the answers
+
+IMPORTANT: When course materials are provided, create questions that test understanding
+of the specific content covered in those materials. Questions should be grounded in the course content."""
 
         context_section = ""
-        if wiki_context.get("found"):
+        if internal_context.get("found"):
             context_section = f"""
-Reference Material:
-{wiki_context['combined_context'][:3000]}"""
+Course Materials (Base questions on this content):
+{internal_context['context'][:4000]}
+
+Create questions that test understanding of this course content."""
+
+        if wiki_context.get("found"):
+            context_section += f"""
+
+Wikipedia Reference (Supplementary):
+{wiki_context['combined_context'][:2000]}"""
 
         types_str = ", ".join(question_types)
         user_prompt = f"""Create {num_questions} quiz questions on: "{topic}"
@@ -427,6 +619,19 @@ Format as JSON:
             except:
                 quiz = content
 
+            # Combine sources
+            sources = []
+            if internal_context.get("sources"):
+                sources.append({
+                    "type": "course_materials",
+                    "items": internal_context["sources"]
+                })
+            if wiki_context.get("articles"):
+                sources.append({
+                    "type": "wikipedia",
+                    "articles": [a["title"] for a in wiki_context.get("articles", [])]
+                })
+
             return {
                 "success": True,
                 "type": "quiz",
@@ -434,12 +639,12 @@ Format as JSON:
                 "num_questions": num_questions,
                 "difficulty": difficulty,
                 "quiz": quiz,
-                "sources": [
-                    {"type": "wikipedia", "articles": [a["title"] for a in wiki_context.get("articles", [])]}
-                ],
+                "sources": sources,
                 "metadata": {
                     "model": response["model"],
-                    "tokens_used": response["usage"].get("completion_tokens", 0)
+                    "tokens_used": response["usage"].get("completion_tokens", 0),
+                    "internal_context_used": internal_context.get("found", False),
+                    "external_context_used": wiki_context.get("found", False)
                 }
             }
         except Exception as e:
