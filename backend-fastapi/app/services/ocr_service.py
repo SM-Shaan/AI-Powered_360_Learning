@@ -16,9 +16,10 @@ class OCRService:
 
     def __init__(self):
         """Initialize OCR service."""
-        # On Windows, you may need to set the tesseract path
-        # pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-        pass
+        # Set Tesseract path for Windows
+        import platform
+        if platform.system() == 'Windows':
+            pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
     def preprocess_image(self, image: Image.Image) -> Image.Image:
         """

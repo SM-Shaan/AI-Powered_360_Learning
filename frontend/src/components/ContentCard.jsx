@@ -1,13 +1,19 @@
 import { FileText, Code, BookOpen, File, Download, Trash2, Calendar, Tag } from 'lucide-react';
 import { contentAPI } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 import { Card, CardContent, CardFooter, CardHeader } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
 
-function ContentCard({ content, onDelete, isAdmin = true }) {
+function ContentCard({ content, onDelete, compact = false, showActions }) {
+  const { isAdmin } = useAuth();
+
+  // If showActions is explicitly set, use that; otherwise use isAdmin
+  const displayActions = showActions !== undefined ? showActions : isAdmin;
+
   const getIcon = (type) => {
-    const iconClasses = "h-6 w-6";
+    const iconClasses = compact ? "h-5 w-5" : "h-6 w-6";
     switch (type) {
       case 'slides':
         return <FileText className={cn(iconClasses, "text-amber-500")} />;
@@ -53,6 +59,51 @@ function ContentCard({ content, onDelete, isAdmin = true }) {
     }
   };
 
+  // Compact view for student dashboard
+  if (compact) {
+    return (
+      <Card className={cn(
+        "overflow-hidden transition-all duration-200 hover:-translate-y-1 hover:shadow-lg cursor-pointer",
+        content.category === 'theory' && "border-l-4 border-l-blue-500",
+        content.category === 'lab' && "border-l-4 border-l-emerald-500"
+      )}>
+        <CardContent className="p-4">
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0 text-gray-400">
+              {getIcon(content.content_type)}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-medium text-gray-900 truncate">{content.title}</h3>
+              <div className="flex items-center gap-2 mt-1">
+                <Badge variant={content.category === 'theory' ? 'theory' : 'lab'} className="text-xs">
+                  {content.category}
+                </Badge>
+                {content.week && (
+                  <span className="text-xs text-gray-500">Week {content.week}</span>
+                )}
+              </div>
+            </div>
+          </div>
+          {content.topic && (
+            <p className="text-xs text-gray-500 mt-2 truncate">{content.topic}</p>
+          )}
+        </CardContent>
+        <CardFooter className="px-4 py-2 bg-gray-50 border-t flex justify-between items-center">
+          <span className="text-xs text-gray-400">{formatDate(content.created_at)}</span>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleDownload}
+            className="h-7 w-7 text-gray-400 hover:text-emerald-600"
+          >
+            <Download className="h-3.5 w-3.5" />
+          </Button>
+        </CardFooter>
+      </Card>
+    );
+  }
+
+  // Full view (default)
   return (
     <Card className={cn(
       "overflow-hidden transition-all duration-200 hover:-translate-y-1 hover:shadow-lg",
@@ -122,7 +173,7 @@ function ContentCard({ content, onDelete, isAdmin = true }) {
           >
             <Download className="h-4 w-4" />
           </Button>
-          {isAdmin && (
+          {displayActions && (
             <Button
               variant="ghost"
               size="icon"
