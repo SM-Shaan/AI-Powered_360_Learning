@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { BookOpen, Upload, LayoutDashboard, Search, Menu, X, Info, Home, LogIn, LogOut, User, ChevronDown } from 'lucide-react';
+import { BookOpen, Upload, LayoutDashboard, Search, Menu, X, Info, Home, LogIn, LogOut, User, ChevronDown, Sparkles } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Button } from './ui/button';
 import { useAuth } from '../contexts/AuthContext';
@@ -26,6 +26,7 @@ function Navbar() {
     { path: '/', label: 'Home', icon: Home },
     { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/browse', label: 'Browse', icon: Search },
+    { path: '/generate', label: 'Generate', icon: Sparkles },
     ...(isAdmin ? [{ path: '/upload', label: 'Upload', icon: Upload }] : []),
     { path: '/about', label: 'About', icon: Info },
   ];

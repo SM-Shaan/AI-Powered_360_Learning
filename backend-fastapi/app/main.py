@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from app.routes import auth_router, content_router
+from app.routes import auth_router, content_router, generation_router
 from app.core.config import settings
 import traceback
 
@@ -37,6 +37,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 # Include routers
 app.include_router(auth_router, prefix="/api")
 app.include_router(content_router, prefix="/api")
+app.include_router(generation_router, prefix="/api")
 
 @app.get("/")
 async def root():

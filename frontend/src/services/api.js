@@ -87,4 +87,26 @@ export const contentAPI = {
   getDownloadUrl: (id) => `${API_BASE_URL}/content/${id}/download`,
 };
 
+// Generation API (Part 3)
+export const generationAPI = {
+  // Generate theory notes
+  generateNotes: (data) => api.post('/generate/notes', data),
+
+  // Generate slides outline
+  generateSlides: (data) => api.post('/generate/slides', data),
+
+  // Generate lab code
+  generateCode: (data) => api.post('/generate/code', data),
+
+  // Generate quiz
+  generateQuiz: (data) => api.post('/generate/quiz', data),
+
+  // Search Wikipedia for context
+  searchWikipedia: (query, maxResults = 5) =>
+    api.get(`/generate/wikipedia/search?query=${encodeURIComponent(query)}&max_results=${maxResults}`),
+
+  // Get supported programming languages
+  getSupportedLanguages: () => api.get('/generate/supported-languages'),
+};
+
 export default api;

@@ -6,6 +6,7 @@ import Home from './pages/Home';
 import Dashboard from './pages/Dashboard';
 import Browse from './pages/Browse';
 import Upload from './pages/Upload';
+import Generate from './pages/Generate';
 import About from './pages/About';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -68,6 +69,16 @@ function AppContent() {
             element={
               <ProtectedRoute requireAdmin>
                 <Upload />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Protected routes - AI Generation */}
+          <Route
+            path="/generate"
+            element={
+              <ProtectedRoute>
+                <Generate />
               </ProtectedRoute>
             }
           />

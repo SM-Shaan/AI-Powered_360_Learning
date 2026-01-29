@@ -18,8 +18,12 @@ class Settings(BaseSettings):
     port: int = 8000
     debug: bool = True
 
-    # Claude API
+    # Claude API (Direct Anthropic)
     anthropic_api_key: Optional[str] = None
+
+    # OpenRouter API (Alternative)
+    openrouter_api_key: Optional[str] = None
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
     # File uploads
     max_file_size: int = 50 * 1024 * 1024  # 50MB
