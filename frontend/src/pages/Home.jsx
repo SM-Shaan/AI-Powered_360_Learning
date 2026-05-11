@@ -27,7 +27,10 @@ import {
   Globe,
   Award,
   Layers,
-  MousePointer
+  MousePointer,
+  Github,
+  Twitter,
+  Linkedin
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { cn } from '../lib/utils';
@@ -117,7 +120,7 @@ const TESTIMONIALS = [
     name: 'Sarah Chen',
     role: 'Computer Science Student',
     avatar: 'SC',
-    content: 'LearnAI360 transformed how I study. The AI chat understands my course material perfectly!',
+    content: 'Learn360 transformed how I study. The AI chat understands my course material perfectly!',
     rating: 5
   },
   {
@@ -180,29 +183,42 @@ function Home() {
       <section className="relative min-h-[90vh] flex items-center overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
         {/* Animated Background Elements */}
         <div className="absolute inset-0">
-          {/* Gradient Mesh */}
-          <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4wMyI+PGNpcmNsZSBjeD0iMzAiIGN5PSIzMCIgcj0iMS41Ii8+PC9nPjwvZz48L3N2Zz4=')] opacity-60" />
+          {/* Base Gradient Background */}
+          <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950" />
 
-          {/* Animated Orbs */}
-          <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-emerald-500/30 rounded-full blur-[120px] animate-pulse" style={{ animationDuration: '4s' }} />
-          <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-violet-500/25 rounded-full blur-[100px] animate-pulse" style={{ animationDuration: '5s', animationDelay: '1s' }} />
-          <div className="absolute top-1/2 right-1/3 w-[300px] h-[300px] bg-cyan-500/20 rounded-full blur-[80px] animate-pulse" style={{ animationDuration: '6s', animationDelay: '2s' }} />
-
-          {/* Floating particles effect */}
+          {/* Water Flow Animation - Left to Right */}
           <div className="absolute inset-0 overflow-hidden">
-            {[...Array(20)].map((_, i) => (
-              <div
-                key={i}
-                className="absolute w-1 h-1 bg-white/20 rounded-full animate-float"
-                style={{
-                  left: `${Math.random() * 100}%`,
-                  top: `${Math.random() * 100}%`,
-                  animationDelay: `${Math.random() * 5}s`,
-                  animationDuration: `${3 + Math.random() * 4}s`
-                }}
-              />
-            ))}
+            {/* Flow Layer 1 */}
+            <div
+              className="absolute top-0 left-0 w-[200%] h-full opacity-30"
+              style={{
+                background: 'linear-gradient(90deg, transparent 0%, rgba(16, 185, 129, 0.3) 25%, rgba(20, 184, 166, 0.2) 50%, transparent 100%)',
+                animation: 'waterFlow 8s linear infinite'
+              }}
+            />
+            {/* Flow Layer 2 */}
+            <div
+              className="absolute top-0 left-0 w-[200%] h-full opacity-20"
+              style={{
+                background: 'linear-gradient(90deg, transparent 0%, rgba(6, 182, 212, 0.25) 30%, rgba(16, 185, 129, 0.15) 60%, transparent 100%)',
+                animation: 'waterFlow 12s linear infinite',
+                animationDelay: '-4s'
+              }}
+            />
+            {/* Flow Layer 3 */}
+            <div
+              className="absolute top-0 left-0 w-[200%] h-full opacity-15"
+              style={{
+                background: 'linear-gradient(90deg, transparent 0%, rgba(52, 211, 153, 0.2) 40%, rgba(34, 211, 238, 0.15) 70%, transparent 100%)',
+                animation: 'waterFlow 15s linear infinite',
+                animationDelay: '-8s'
+              }}
+            />
           </div>
+
+          {/* Subtle Glow */}
+          <div className="absolute top-1/4 left-1/4 w-[600px] h-[600px] bg-emerald-500/10 rounded-full blur-[150px]" />
+          <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-cyan-500/8 rounded-full blur-[120px]" />
         </div>
 
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 py-20 lg:py-32 w-full">
@@ -249,10 +265,10 @@ function Home() {
                   asChild
                   variant="outline"
                   size="lg"
-                  className="border-white/20 text-white hover:bg-white/10 hover:border-white/30 px-8 py-6 text-lg backdrop-blur-sm transition-all duration-300"
+                  className="group bg-transparent border-white/30 text-white hover:bg-emerald-500/20 hover:border-emerald-400/50 hover:text-emerald-100 px-8 py-6 text-lg backdrop-blur-sm transition-all duration-300 hover:scale-105"
                 >
                   <Link to="/about">
-                    <Play className="mr-2 h-5 w-5" />
+                    <Play className="mr-2 h-5 w-5 group-hover:scale-110 transition-transform" />
                     Learn More
                   </Link>
                 </Button>
@@ -293,7 +309,7 @@ function Home() {
                     </div>
                     <div className="flex items-center gap-2 px-3 py-1 bg-white/5 rounded-lg border border-white/10">
                       <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="text-xs text-slate-400">LearnAI360</span>
+                      <span className="text-xs text-slate-400">Learn360</span>
                     </div>
                   </div>
 
@@ -639,10 +655,10 @@ function Home() {
               asChild
               variant="outline"
               size="lg"
-              className="border-2 border-white/30 text-white hover:bg-white/20 hover:border-white/50 px-10 py-6 text-lg backdrop-blur-sm transition-all duration-300"
+              className="group bg-transparent border-2 border-white/30 text-white hover:bg-white/20 hover:border-white/50 px-10 py-6 text-lg backdrop-blur-sm transition-all duration-300 hover:scale-105"
             >
               <Link to="/about">
-                <Play className="mr-2 h-5 w-5" />
+                <Play className="mr-2 h-5 w-5 group-hover:scale-110 transition-transform" />
                 Watch Demo
               </Link>
             </Button>
@@ -681,18 +697,22 @@ function Home() {
                 <div className="p-2.5 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/20">
                   <GraduationCap className="h-6 w-6 text-white" />
                 </div>
-                <span className="text-2xl font-bold bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">LearnAI360</span>
+                <span className="text-2xl font-bold bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">Learn360</span>
               </div>
               <p className="text-slate-400 mb-6 leading-relaxed">
                 Your AI-powered learning companion. Access materials, get explanations,
                 and generate content with cutting-edge AI technology.
               </p>
-              {/* Social icons placeholder */}
+              {/* Social icons */}
               <div className="flex gap-4">
-                {['Github', 'Twitter', 'LinkedIn'].map((social, idx) => (
-                  <div key={idx} className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 hover:border-white/20 transition-all cursor-pointer">
-                    <Globe className="w-4 h-4 text-slate-400" />
-                  </div>
+                {[
+                  { icon: Github, label: 'Github' },
+                  { icon: Twitter, label: 'Twitter' },
+                  { icon: Linkedin, label: 'LinkedIn' }
+                ].map((social, idx) => (
+                  <a key={idx} href="#" aria-label={social.label} className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-emerald-500/20 hover:border-emerald-500/30 hover:text-emerald-400 transition-all cursor-pointer">
+                    <social.icon className="w-4 h-4 text-slate-400 hover:text-emerald-400" />
+                  </a>
                 ))}
               </div>
             </div>
@@ -756,7 +776,7 @@ function Home() {
           {/* Bottom bar */}
           <div className="border-t border-slate-800/50 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
             <p className="text-slate-500 text-sm">
-              &copy; {new Date().getFullYear()} LearnAI360. All rights reserved.
+              &copy; {new Date().getFullYear()} Learn360. All rights reserved.
             </p>
             <div className="flex items-center gap-6 text-sm text-slate-500">
               <span className="hover:text-slate-300 cursor-pointer transition-colors">Privacy Policy</span>

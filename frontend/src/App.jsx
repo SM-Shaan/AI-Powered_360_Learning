@@ -16,24 +16,9 @@ import Register from './pages/Register';
 import NotFound from './pages/NotFound';
 import './App.css';
 
-// Layout component that conditionally wraps content
+// Layout component - all pages are now full-width
 function Layout({ children }) {
-  const location = useLocation();
-
-  // Pages that have their own full-width layout
-  const fullWidthPages = ['/', '/about', '/chat', '/forum'];
-  const isFullWidth = fullWidthPages.includes(location.pathname) || location.pathname.startsWith('/forum');
-
-  if (isFullWidth) {
-    return <>{children}</>;
-  }
-
-  // Other pages get the container wrapper
-  return (
-    <main className="container max-w-7xl mx-auto px-4 py-8">
-      {children}
-    </main>
-  );
+  return <>{children}</>;
 }
 
 function AppContent() {

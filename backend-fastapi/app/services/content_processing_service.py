@@ -4,7 +4,9 @@ Extracts text, chunks content, and generates embeddings for search
 """
 
 import re
+import io
 from typing import List, Dict, Any, Optional
+from PyPDF2 import PdfReader
 from app.core.supabase import get_supabase_admin
 from app.services.embedding_service import get_embedding_service
 
@@ -16,6 +18,131 @@ class ContentProcessingService:
         self.embedding_service = get_embedding_service()
         self.chunk_size = 1000  # Characters per chunk
         self.chunk_overlap = 200  # Overlap between chunks
+
+    def _is_garbage_text(self, text: str) -> bool:
+        """
+        Check if extracted text is actually PDF binary/stream garbage.
+        """
+        if not text or len(text) < 50:
+            return False
+
+        garbage_indicators = [
+            'endstream', 'endobj', '/Font', '/XObject', '/Pattern',
+            '/Paint', '/Image', '/ExtGState', '/ColorSpace', '/Encoding',
+            'BT\n', '\nET', '/F1 ', '/F2 ', '0 R >>', 'obj <<',
+            '/Type /Page', '/MediaBox', '/Resources', '/ProcSet'
+        ]
+
+        garbage_count = sum(1 for indicator in garbage_indicators if indicator in text)
+        printable_ratio = sum(1 for c in text if c.isprintable() or c in '\n\t ') / len(text)
+
+        if garbage_count >= 3 or printable_ratio < 0.7:
+            return True
+
+        special_pattern = r'[§¶µ¤©®™°±²³´¸¹º»¼½¾¿×÷ØÙÚÛÜÝÞßøùúûüýþÿ]{3,}'
+        if len(re.findall(special_pattern, text)) > 5:
+            return True
+
+        return False
+
+    def _clean_pdf_text(self, text: str) -> str:
+        """Clean extracted PDF text by removing artifacts and null bytes."""
+        if not text:
+            return ""
+
+        # CRITICAL: Remove null bytes first - PostgreSQL cannot store these
+        cleaned = text.replace('\x00', '').replace('\u0000', '')
+
+        # Remove other control characters
+        cleaned = ''.join(char for char in cleaned if ord(char) >= 32 or char in '\n\t\r')
+
+        # Remove PDF artifacts
+        artifacts = [
+            r'(?:endstream|endobj|obj\s*<<|>>\s*stream)',
+            r'/[A-Z][a-z]*\d*\s+\d+\s+\d+\s+R',
+            r'<<[^>]*>>',
+        ]
+
+        for pattern in artifacts:
+            cleaned = re.sub(pattern, ' ', cleaned, flags=re.IGNORECASE)
+
+        # Normalize whitespace
+        cleaned = re.sub(r'[ \t]+', ' ', cleaned)
+        cleaned = re.sub(r'\n\s*\n\s*\n+', '\n\n', cleaned)
+
+        return cleaned.strip()
+
+    def _sanitize_for_db(self, text: str) -> str:
+        """
+        Sanitize text for PostgreSQL storage.
+        Removes null bytes and other characters that cause database errors.
+        """
+        if not text:
+            return ""
+        # Remove null bytes which PostgreSQL cannot store
+        sanitized = text.replace('\x00', '').replace('\u0000', '')
+        # Remove any other problematic control characters
+        sanitized = ''.join(char for char in sanitized if ord(char) >= 32 or char in '\n\t\r')
+        return sanitized
+
+    def _extract_text_from_pdf(self, pdf_content: bytes) -> str:
+        """
+        Extract text from PDF content with validation.
+
+        Args:
+            pdf_content: PDF file bytes
+
+        Returns:
+            Extracted text
+
+        Raises:
+            ValueError: If PDF cannot be properly extracted
+        """
+        try:
+            reader = PdfReader(io.BytesIO(pdf_content))
+            text_parts = []
+            garbage_pages = 0
+
+            for page_num, page in enumerate(reader.pages):
+                try:
+                    page_text = page.extract_text()
+
+                    if page_text:
+                        if self._is_garbage_text(page_text):
+                            garbage_pages += 1
+                            print(f"Warning: Page {page_num + 1} extracted as garbage, skipping")
+                            continue
+
+                        cleaned_text = self._clean_pdf_text(page_text)
+
+                        if cleaned_text and len(cleaned_text) > 20:
+                            text_parts.append(f"[Page {page_num + 1}]\n{cleaned_text}")
+
+                except Exception as page_error:
+                    print(f"Warning: Failed to extract page {page_num + 1}: {page_error}")
+                    continue
+
+            full_text = "\n\n".join(text_parts)
+
+            total_pages = len(reader.pages)
+            if garbage_pages > total_pages * 0.5:
+                raise ValueError(
+                    f"PDF extraction failed: {garbage_pages}/{total_pages} pages contained "
+                    "unreadable data. This PDF may be image-based or have encoding issues."
+                )
+
+            if not full_text.strip():
+                raise ValueError(
+                    "No readable text could be extracted from this PDF. "
+                    "It may be image-based. Try using the OCR upload feature instead."
+                )
+
+            return full_text
+
+        except ValueError:
+            raise
+        except Exception as e:
+            raise ValueError(f"Failed to extract PDF text: {str(e)}")
 
     def _extract_text_from_code(self, content: str, extension: str) -> str:
         """Extract meaningful text from code files"""
@@ -213,14 +340,24 @@ class ContentProcessingService:
         # Get file extension
         extension = '.' + file_name.split('.')[-1].lower() if '.' in file_name else ''
 
-        # Decode file content to text
-        try:
-            text = file_content.decode('utf-8')
-        except UnicodeDecodeError:
+        # Handle PDFs separately
+        if extension == '.pdf' or mime_type == 'application/pdf':
             try:
-                text = file_content.decode('latin-1')
-            except:
-                return {"success": False, "error": "Could not decode file content"}
+                text = self._extract_text_from_pdf(file_content)
+                print(f"Extracted {len(text)} characters from PDF")
+            except ValueError as e:
+                return {"success": False, "error": str(e)}
+            except Exception as e:
+                return {"success": False, "error": f"PDF extraction failed: {str(e)}"}
+        else:
+            # Decode file content to text for non-PDF files
+            try:
+                text = file_content.decode('utf-8')
+            except UnicodeDecodeError:
+                try:
+                    text = file_content.decode('latin-1')
+                except:
+                    return {"success": False, "error": "Could not decode file content"}
 
         # Determine if this is code
         code_extensions = ['.py', '.js', '.ts', '.java', '.c', '.cpp', '.h', '.hpp',
@@ -236,7 +373,11 @@ class ContentProcessingService:
         # Store chunks and generate embeddings
         stored_chunks = []
         for chunk in chunks:
-            chunk_text = chunk['text']
+            # Sanitize chunk text for database storage (removes null bytes)
+            chunk_text = self._sanitize_for_db(chunk['text'])
+
+            if not chunk_text.strip():
+                continue  # Skip empty chunks
 
             # Generate embedding
             try:
@@ -339,7 +480,11 @@ class ContentProcessingService:
         # Store chunks and generate embeddings
         stored_chunks = []
         for chunk in chunks:
-            chunk_text = chunk['text']
+            # Sanitize chunk text for database storage (removes null bytes)
+            chunk_text = self._sanitize_for_db(chunk['text'])
+
+            if not chunk_text.strip():
+                continue  # Skip empty chunks
 
             # Generate embedding
             try:

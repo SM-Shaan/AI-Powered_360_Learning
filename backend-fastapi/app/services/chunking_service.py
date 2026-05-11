@@ -57,9 +57,72 @@ class ChunkingService:
 
     # ==================== TEXT EXTRACTION ====================
 
+    def _is_garbage_text(self, text: str) -> bool:
+        """
+        Check if extracted text is actually PDF binary/stream garbage.
+
+        Returns True if the text appears to be raw PDF data rather than readable content.
+        """
+        if not text or len(text) < 50:
+            return False
+
+        # Common PDF internal syntax patterns that indicate failed extraction
+        garbage_indicators = [
+            'endstream', 'endobj', '/Font', '/XObject', '/Pattern',
+            '/Paint', '/Image', '/ExtGState', '/ColorSpace', '/Encoding',
+            'BT\n', '\nET', '/F1 ', '/F2 ', '0 R >>', 'obj <<',
+            '/Type /Page', '/MediaBox', '/Resources', '/ProcSet'
+        ]
+
+        # Count how many garbage indicators are present
+        garbage_count = sum(1 for indicator in garbage_indicators if indicator in text)
+
+        # Check for high ratio of non-printable or unusual characters
+        printable_ratio = sum(1 for c in text if c.isprintable() or c in '\n\t ') / len(text)
+
+        # If many garbage indicators or low printable ratio, it's garbage
+        if garbage_count >= 3 or printable_ratio < 0.7:
+            return True
+
+        # Check for excessive special character sequences (common in corrupted extraction)
+        special_pattern = r'[§¶µ¤©®™°±²³´¸¹º»¼½¾¿×÷ØÙÚÛÜÝÞßøùúûüýþÿ]{3,}'
+        if len(re.findall(special_pattern, text)) > 5:
+            return True
+
+        return False
+
+    def _clean_pdf_text(self, text: str) -> str:
+        """
+        Clean extracted PDF text by removing artifacts and normalizing whitespace.
+        """
+        if not text:
+            return ""
+
+        # CRITICAL: Remove null bytes first - PostgreSQL cannot store these
+        cleaned = text.replace('\x00', '').replace('\u0000', '')
+
+        # Remove other control characters (keep newlines and tabs)
+        cleaned = ''.join(char for char in cleaned if ord(char) >= 32 or char in '\n\t\r')
+
+        # Remove PDF artifacts
+        artifacts = [
+            r'(?:endstream|endobj|obj\s*<<|>>\s*stream)',  # PDF syntax
+            r'/[A-Z][a-z]*\d*\s+\d+\s+\d+\s+R',  # PDF references like /Font1 0 0 R
+            r'<<[^>]*>>',  # PDF dictionaries that leaked through
+        ]
+
+        for pattern in artifacts:
+            cleaned = re.sub(pattern, ' ', cleaned, flags=re.IGNORECASE)
+
+        # Normalize whitespace
+        cleaned = re.sub(r'[ \t]+', ' ', cleaned)
+        cleaned = re.sub(r'\n\s*\n\s*\n+', '\n\n', cleaned)
+
+        return cleaned.strip()
+
     def extract_text_from_pdf(self, pdf_content: bytes) -> str:
         """
-        Extract text from PDF content.
+        Extract text from PDF content with validation and cleaning.
 
         Args:
             pdf_content: PDF file bytes
@@ -70,13 +133,50 @@ class ChunkingService:
         try:
             reader = PdfReader(io.BytesIO(pdf_content))
             text_parts = []
+            garbage_pages = 0
 
             for page_num, page in enumerate(reader.pages):
-                page_text = page.extract_text()
-                if page_text:
-                    text_parts.append(f"[Page {page_num + 1}]\n{page_text}")
+                try:
+                    page_text = page.extract_text()
 
-            return "\n\n".join(text_parts)
+                    if page_text:
+                        # Check if this page extracted as garbage
+                        if self._is_garbage_text(page_text):
+                            garbage_pages += 1
+                            print(f"Warning: Page {page_num + 1} extracted as garbage, skipping")
+                            continue
+
+                        # Clean the extracted text
+                        cleaned_text = self._clean_pdf_text(page_text)
+
+                        if cleaned_text and len(cleaned_text) > 20:
+                            text_parts.append(f"[Page {page_num + 1}]\n{cleaned_text}")
+
+                except Exception as page_error:
+                    print(f"Warning: Failed to extract page {page_num + 1}: {page_error}")
+                    continue
+
+            full_text = "\n\n".join(text_parts)
+
+            # If too many garbage pages or no usable text, raise an error
+            total_pages = len(reader.pages)
+            if garbage_pages > total_pages * 0.5:
+                raise ValueError(
+                    f"PDF extraction failed: {garbage_pages}/{total_pages} pages contained "
+                    "unreadable data. This PDF may be image-based or have encoding issues. "
+                    "Consider using OCR upload for image-based PDFs."
+                )
+
+            if not full_text.strip():
+                raise ValueError(
+                    "No readable text could be extracted from this PDF. "
+                    "It may be image-based. Try using the OCR upload feature instead."
+                )
+
+            return full_text
+
+        except ValueError:
+            raise
         except Exception as e:
             raise ValueError(f"Failed to extract PDF text: {str(e)}")
 

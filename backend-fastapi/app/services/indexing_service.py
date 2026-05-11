@@ -27,6 +27,19 @@ class IndexingService:
         self.chunking_service = get_chunking_service()
         self.embedding_service = get_embedding_service()
 
+    def _sanitize_for_db(self, text: str) -> str:
+        """
+        Sanitize text for PostgreSQL storage.
+        Removes null bytes and other characters that cause database errors.
+        """
+        if not text:
+            return ""
+        # Remove null bytes which PostgreSQL cannot store
+        sanitized = text.replace('\x00', '').replace('\u0000', '')
+        # Remove any other problematic control characters
+        sanitized = ''.join(char for char in sanitized if ord(char) >= 32 or char in '\n\t\r')
+        return sanitized
+
     async def index_content(self, content_id: str) -> Dict[str, Any]:
         """
         Index a single content item.
@@ -99,14 +112,20 @@ class IndexingService:
 
         for i, chunk in enumerate(chunks):
             try:
-                # Generate embedding
-                embedding = await self.embedding_service.embed_document(chunk.text)
+                # Sanitize text for database storage (removes null bytes)
+                chunk_text = self._sanitize_for_db(chunk.text)
 
-                # Prepare chunk data 
+                if not chunk_text.strip():
+                    continue  # Skip empty chunks
+
+                # Generate embedding
+                embedding = await self.embedding_service.embed_document(chunk_text)
+
+                # Prepare chunk data
                 chunk_data = {
                     "content_id": content_id,
                     "chunk_index": i,
-                    "chunk_text": chunk.text[:10000],  # Limit text size
+                    "chunk_text": chunk_text[:10000],  # Limit text size
                     "chunk_type": chunk.chunk_type,
                     "start_position": chunk.start_position,
                     "end_position": chunk.end_position,
@@ -124,14 +143,14 @@ class IndexingService:
 
         # 5. Generate and store document-level embedding
         try:
-            # Use first 2000 chars for document embedding
-            doc_text = full_text[:2000]
+            # Use first 2000 chars for document embedding (sanitized)
+            doc_text = self._sanitize_for_db(full_text[:2000])
             doc_embedding = await self.embedding_service.embed_document(doc_text)
 
-            # Update content with embedding and extracted text
+            # Update content with embedding and extracted text (sanitized)
             supabase.table('content').update({
                 "embedding": doc_embedding,
-                "text_content": full_text[:50000]  # Store extracted text
+                "text_content": self._sanitize_for_db(full_text[:50000])  # Store extracted text
             }).eq('id', content_id).execute()
 
         except Exception as e:

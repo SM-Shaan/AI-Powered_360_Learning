@@ -14,87 +14,33 @@ import {
   User,
   ChevronLeft,
   ChevronRight,
-  MoreVertical,
   Search,
   Clock,
   Zap,
   GraduationCap,
   Code2,
-  FileText,
-  HelpCircle
+  HelpCircle,
+  ArrowUpToLine,
+  MoreHorizontal,
+  Copy,
+  Check,
+  RefreshCw,
+  Lightbulb,
+  Brain,
+  Mic,
+  Paperclip,
+  Settings,
+  X,
+  ChevronDown,
+  MessageCircle,
+  History,
+  Star,
+  ThumbsUp,
+  ThumbsDown
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
-// Water Ripple Effect Component
-const WaterRipple = ({ className }) => (
-  <div className={cn("absolute inset-0 overflow-hidden pointer-events-none", className)}>
-    <div className="water-ripple water-ripple-1" />
-    <div className="water-ripple water-ripple-2" />
-    <div className="water-ripple water-ripple-3" />
-  </div>
-);
-
-// Floating Bubbles Component
-const FloatingBubbles = ({ count = 15 }) => (
-  <div className="absolute inset-0 overflow-hidden pointer-events-none">
-    {[...Array(count)].map((_, i) => (
-      <div
-        key={i}
-        className="bubble"
-        style={{
-          left: `${Math.random() * 100}%`,
-          width: `${8 + Math.random() * 20}px`,
-          height: `${8 + Math.random() * 20}px`,
-          animationDelay: `${Math.random() * 5}s`,
-          animationDuration: `${4 + Math.random() * 4}s`,
-        }}
-      />
-    ))}
-  </div>
-);
-
-// Wave Animation Component
-const WaveAnimation = ({ className }) => (
-  <div className={cn("absolute bottom-0 left-0 right-0 overflow-hidden", className)}>
-    <svg
-      className="wave wave-1"
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 1440 320"
-      preserveAspectRatio="none"
-    >
-      <path
-        fill="currentColor"
-        fillOpacity="0.3"
-        d="M0,192L48,197.3C96,203,192,213,288,229.3C384,245,480,267,576,250.7C672,235,768,181,864,181.3C960,181,1056,235,1152,234.7C1248,235,1344,181,1392,154.7L1440,128L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z"
-      />
-    </svg>
-    <svg
-      className="wave wave-2"
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 1440 320"
-      preserveAspectRatio="none"
-    >
-      <path
-        fill="currentColor"
-        fillOpacity="0.2"
-        d="M0,64L48,80C96,96,192,128,288,128C384,128,480,96,576,90.7C672,85,768,107,864,128C960,149,1056,171,1152,165.3C1248,160,1344,128,1392,112L1440,96L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z"
-      />
-    </svg>
-    <svg
-      className="wave wave-3"
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 1440 320"
-      preserveAspectRatio="none"
-    >
-      <path
-        fill="currentColor"
-        fillOpacity="0.1"
-        d="M0,256L48,240C96,224,192,192,288,181.3C384,171,480,181,576,186.7C672,192,768,192,864,176C960,160,1056,128,1152,133.3C1248,139,1344,181,1392,202.7L1440,224L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z"
-      />
-    </svg>
-  </div>
-);
-
+// Suggestion category icons
 const SUGGESTION_ICONS = {
   'Course Questions': BookOpen,
   'Explanations': HelpCircle,
@@ -103,23 +49,163 @@ const SUGGESTION_ICONS = {
   default: Zap
 };
 
+// Typing indicator component
+const TypingIndicator = () => (
+  <div className="flex items-center gap-1.5">
+    {[0, 1, 2].map((i) => (
+      <div
+        key={i}
+        className="w-2 h-2 rounded-full bg-gradient-to-br from-violet-400 to-purple-500"
+        style={{
+          animation: 'typing-bounce 1.4s ease-in-out infinite',
+          animationDelay: `${i * 0.16}s`
+        }}
+      />
+    ))}
+  </div>
+);
+
+// Message action button
+const MessageAction = ({ icon: Icon, label, onClick, active }) => (
+  <button
+    onClick={onClick}
+    className={cn(
+      "p-1.5 rounded-lg transition-all",
+      active
+        ? "bg-violet-100 text-violet-600"
+        : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+    )}
+    title={label}
+  >
+    <Icon className="w-4 h-4" />
+  </button>
+);
+
+// Source badge component
+const SourceBadge = ({ source }) => {
+  const isCourse = source.type === 'course';
+  return (
+    <span className={cn(
+      "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
+      "hover:scale-105 cursor-default",
+      isCourse
+        ? "bg-gradient-to-r from-emerald-50 to-teal-50 text-emerald-700 border border-emerald-200"
+        : "bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 border border-blue-200"
+    )}>
+      {isCourse ? (
+        <BookOpen className="w-3.5 h-3.5" />
+      ) : (
+        <Globe className="w-3.5 h-3.5" />
+      )}
+      <span className="max-w-[150px] truncate">{source.title}</span>
+      {source.relevance && (
+        <span className="opacity-60 text-[10px]">
+          {Math.round(source.relevance * 100)}%
+        </span>
+      )}
+    </span>
+  );
+};
+
+// Conversation item component
+const ConversationItem = ({ conv, isActive, onClick, onDelete }) => (
+  <div
+    className={cn(
+      "group relative flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-all duration-200",
+      isActive
+        ? "bg-gradient-to-r from-violet-100 to-purple-100 shadow-sm"
+        : "hover:bg-white hover:shadow-sm"
+    )}
+    onClick={onClick}
+  >
+    <div className={cn(
+      "p-2 rounded-lg transition-colors",
+      isActive
+        ? "bg-gradient-to-br from-violet-500 to-purple-600"
+        : "bg-slate-100 group-hover:bg-slate-200"
+    )}>
+      <MessageSquare className={cn(
+        "w-4 h-4",
+        isActive ? "text-white" : "text-slate-500"
+      )} />
+    </div>
+    <div className="flex-1 min-w-0">
+      <p className={cn(
+        "text-sm font-medium truncate",
+        isActive ? "text-violet-900" : "text-slate-700"
+      )}>
+        {conv.last_message || 'New conversation'}
+      </p>
+      <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+        <Clock className="w-3 h-3" />
+        {new Date(conv.updated_at || conv.created_at).toLocaleDateString()}
+      </p>
+    </div>
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onDelete(conv.id);
+      }}
+      className={cn(
+        "absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg transition-all",
+        "opacity-0 group-hover:opacity-100",
+        "hover:bg-red-100 text-slate-400 hover:text-red-500"
+      )}
+    >
+      <Trash2 className="w-3.5 h-3.5" />
+    </button>
+  </div>
+);
+
+// Suggestion card component
+const SuggestionCard = ({ prompt, onClick }) => (
+  <button
+    onClick={onClick}
+    className={cn(
+      "w-full text-left p-4 bg-white rounded-xl border border-slate-200",
+      "hover:border-violet-300 hover:shadow-md hover:bg-gradient-to-r hover:from-violet-50 hover:to-purple-50",
+      "transition-all duration-300 group"
+    )}
+  >
+    <p className="text-sm text-slate-700 line-clamp-2 group-hover:text-violet-700">
+      {prompt}
+    </p>
+    <span className="text-xs text-violet-500 opacity-0 group-hover:opacity-100 transition-opacity mt-2 block">
+      Click to ask
+    </span>
+  </button>
+);
+
+// Empty state component
+const EmptyConversations = () => (
+  <div className="text-center py-12 px-4">
+    <div className="w-16 h-16 bg-gradient-to-br from-slate-100 to-slate-200 rounded-2xl flex items-center justify-center mx-auto mb-4">
+      <MessageCircle className="w-8 h-8 text-slate-400" />
+    </div>
+    <h3 className="font-medium text-slate-700 mb-1">No conversations yet</h3>
+    <p className="text-sm text-slate-400">Start a new chat to begin learning</p>
+  </div>
+);
+
 const Chat = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [conversationId, setConversationId] = useState(() => {
-    // Restore conversation ID from localStorage on initial load
     return localStorage.getItem('chat_conversation_id') || 'new';
   });
   const [conversations, setConversations] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const [copiedId, setCopiedId] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
   const inputRef = useRef(null);
 
-  // Save conversation ID to localStorage whenever it changes
+  // Save conversation ID to localStorage
   useEffect(() => {
     if (conversationId && conversationId !== 'new') {
       localStorage.setItem('chat_conversation_id', conversationId);
@@ -128,13 +214,12 @@ const Chat = () => {
     }
   }, [conversationId]);
 
-  // Initial load: fetch conversations and restore saved conversation
+  // Initial load
   useEffect(() => {
     const initializeChat = async () => {
       await loadConversations();
       await loadSuggestions();
 
-      // Restore saved conversation if exists
       const savedConvId = localStorage.getItem('chat_conversation_id');
       if (savedConvId && savedConvId !== 'new') {
         await loadConversation(savedConvId);
@@ -145,12 +230,29 @@ const Chat = () => {
     initializeChat();
   }, []);
 
+  // Scroll handling
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      setShowScrollTop(container.scrollTop > 300);
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, []);
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const scrollToTop = () => {
+    messagesContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const loadConversations = async () => {
@@ -179,7 +281,6 @@ const Chat = () => {
       setMessages(data.messages || []);
     } catch (err) {
       console.error('Failed to load conversation:', err);
-      // If conversation not found (e.g., server restarted), clear saved ID
       if (err.response?.status === 404 || err.response?.status === 403) {
         localStorage.removeItem('chat_conversation_id');
         setConversationId('new');
@@ -263,113 +364,139 @@ const Chat = () => {
     inputRef.current?.focus();
   };
 
+  const copyMessage = async (content, id) => {
+    await navigator.clipboard.writeText(content);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
   const formatTime = (timestamp) => {
     return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  const filteredConversations = conversations.filter(conv =>
+    !searchQuery || conv.last_message?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   const renderMessage = (msg, idx) => {
     const isUser = msg.role === 'user';
+    const messageId = `msg-${idx}`;
 
     return (
       <div
         key={idx}
         className={cn(
-          "flex gap-4 px-4 py-6 animate-in fade-in slide-in-from-bottom-2 duration-300",
-          isUser ? "bg-transparent" : "bg-slate-50/50"
+          "group px-4 py-6 transition-colors",
+          isUser ? "bg-transparent" : "bg-gradient-to-r from-slate-50/80 to-violet-50/30"
         )}
       >
-        {/* Avatar */}
-        <div className={cn(
-          "flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center",
-          isUser
-            ? "bg-gradient-to-br from-blue-500 to-indigo-600"
-            : msg.error
-            ? "bg-red-100"
-            : "bg-gradient-to-br from-cyan-400 via-blue-500 to-violet-500 water-glow"
-        )}>
-          {isUser ? (
-            <User className="w-4 h-4 text-white" />
-          ) : (
-            <Bot className={cn("w-4 h-4", msg.error ? "text-red-600" : "text-white")} />
-          )}
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 min-w-0 space-y-2">
-          {/* Header */}
-          <div className="flex items-center gap-2">
-            <span className={cn(
-              "text-sm font-semibold",
-              isUser ? "text-blue-700" : msg.error ? "text-red-700" : "text-violet-700"
-            )}>
-              {isUser ? 'You' : 'AI Assistant'}
-            </span>
-            <span className="text-xs text-gray-400">
-              {formatTime(msg.timestamp)}
-            </span>
-          </div>
-
-          {/* Message Body */}
+        <div className="max-w-3xl mx-auto flex gap-4">
+          {/* Avatar */}
           <div className={cn(
-            "prose prose-sm max-w-none",
-            isUser ? "text-gray-800" : msg.error ? "text-red-700" : "text-gray-700",
-            "prose-headings:text-gray-800 prose-code:text-violet-600 prose-code:bg-violet-50 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none"
+            "flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center shadow-sm",
+            isUser
+              ? "bg-gradient-to-br from-slate-700 to-slate-800"
+              : msg.error
+              ? "bg-gradient-to-br from-red-400 to-red-500"
+              : "bg-gradient-to-br from-violet-500 to-purple-600"
           )}>
             {isUser ? (
-              <p className="m-0 leading-relaxed">{msg.content}</p>
+              <User className="w-5 h-5 text-white" />
             ) : (
-              <ReactMarkdown>{msg.content}</ReactMarkdown>
+              <Bot className={cn("w-5 h-5 text-white", loading && idx === messages.length - 1 && "animate-pulse")} />
             )}
           </div>
 
-          {/* Sources */}
-          {msg.sources && msg.sources.length > 0 && (
-            <div className="pt-3 mt-3 border-t border-gray-200">
-              <p className="text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1">
-                <BookOpen className="w-3.5 h-3.5" />
-                Sources
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {msg.sources.map((source, sIdx) => (
-                  <span
-                    key={sIdx}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium",
-                      source.type === 'course'
-                        ? "bg-emerald-100 text-emerald-700"
-                        : "bg-blue-100 text-blue-700"
-                    )}
-                  >
-                    {source.type === 'course' ? (
-                      <BookOpen className="w-3 h-3" />
-                    ) : (
-                      <Globe className="w-3 h-3" />
-                    )}
-                    {source.title}
-                    {source.relevance && (
-                      <span className="opacity-70">({Math.round(source.relevance * 100)}%)</span>
-                    )}
+          {/* Content */}
+          <div className="flex-1 min-w-0 space-y-3">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className={cn(
+                  "text-sm font-semibold",
+                  isUser ? "text-slate-700" : msg.error ? "text-red-700" : "text-violet-700"
+                )}>
+                  {isUser ? 'You' : 'AI Assistant'}
+                </span>
+                <span className="text-xs text-slate-400">
+                  {formatTime(msg.timestamp)}
+                </span>
+                {!isUser && !msg.error && (
+                  <span className="flex items-center gap-1 px-2 py-0.5 bg-violet-100 text-violet-600 rounded-full text-[10px] font-medium">
+                    <Sparkles className="w-3 h-3" />
+                    Claude
                   </span>
-                ))}
+                )}
+              </div>
+
+              {/* Message actions */}
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <MessageAction
+                  icon={copiedId === messageId ? Check : Copy}
+                  label="Copy"
+                  onClick={() => copyMessage(msg.content, messageId)}
+                  active={copiedId === messageId}
+                />
+                {!isUser && (
+                  <>
+                    <MessageAction icon={ThumbsUp} label="Good response" onClick={() => {}} />
+                    <MessageAction icon={ThumbsDown} label="Bad response" onClick={() => {}} />
+                    <MessageAction icon={RefreshCw} label="Regenerate" onClick={() => {}} />
+                  </>
+                )}
               </div>
             </div>
-          )}
 
-          {/* Metadata */}
-          {msg.metadata && (
-            <div className="flex items-center gap-3 text-xs text-gray-400">
-              {msg.metadata.course_context_used && (
-                <span className="flex items-center gap-1">
-                  <BookOpen className="w-3 h-3" /> Course context
-                </span>
-              )}
-              {msg.metadata.wikipedia_context_used && (
-                <span className="flex items-center gap-1">
-                  <Globe className="w-3 h-3" /> Wikipedia
-                </span>
+            {/* Message Body */}
+            <div className={cn(
+              "prose prose-sm max-w-none leading-relaxed",
+              isUser ? "text-slate-800" : msg.error ? "text-red-700" : "text-slate-700",
+              "prose-headings:text-slate-800 prose-headings:font-semibold",
+              "prose-p:leading-relaxed prose-p:mb-4",
+              "prose-code:text-violet-600 prose-code:bg-violet-50 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:text-sm",
+              "prose-code:before:content-none prose-code:after:content-none",
+              "prose-pre:bg-slate-900 prose-pre:text-slate-100 prose-pre:rounded-xl prose-pre:shadow-lg",
+              "prose-ul:my-2 prose-li:my-0.5",
+              "prose-a:text-violet-600 prose-a:no-underline hover:prose-a:underline"
+            )}>
+              {isUser ? (
+                <p className="m-0">{msg.content}</p>
+              ) : (
+                <ReactMarkdown>{msg.content}</ReactMarkdown>
               )}
             </div>
-          )}
+
+            {/* Sources */}
+            {msg.sources && msg.sources.length > 0 && (
+              <div className="pt-4 mt-4 border-t border-slate-200">
+                <p className="text-xs font-semibold text-slate-500 mb-3 flex items-center gap-1.5">
+                  <BookOpen className="w-4 h-4" />
+                  Referenced Sources
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {msg.sources.map((source, sIdx) => (
+                    <SourceBadge key={sIdx} source={source} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Metadata */}
+            {msg.metadata && (
+              <div className="flex items-center gap-4 text-xs text-slate-400 pt-2">
+                {msg.metadata.course_context_used && (
+                  <span className="flex items-center gap-1.5 px-2 py-1 bg-emerald-50 text-emerald-600 rounded-lg">
+                    <BookOpen className="w-3 h-3" /> Course materials used
+                  </span>
+                )}
+                {msg.metadata.wikipedia_context_used && (
+                  <span className="flex items-center gap-1.5 px-2 py-1 bg-blue-50 text-blue-600 rounded-lg">
+                    <Globe className="w-3 h-3" /> Wikipedia referenced
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -377,91 +504,109 @@ const Chat = () => {
 
   const renderWelcome = () => (
     <div className="flex-1 flex flex-col items-center justify-center p-8 relative overflow-hidden">
-      {/* Water Background Effects */}
-      <div className="absolute inset-0 bg-gradient-to-b from-cyan-50/50 via-blue-50/30 to-violet-50/50" />
-      <FloatingBubbles count={20} />
-      <WaveAnimation className="h-32 text-cyan-400" />
+      {/* Background effects */}
+      <div className="absolute inset-0 bg-gradient-to-br from-violet-50/50 via-white to-purple-50/50" />
+      <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-violet-200/30 rounded-full blur-[100px]" />
+      <div className="absolute bottom-1/4 left-1/4 w-80 h-80 bg-purple-200/30 rounded-full blur-[80px]" />
 
       <div className="max-w-2xl mx-auto text-center relative z-10">
-        {/* Logo with Water Ripple */}
-        <div className="mb-6 relative">
-          <div className="relative">
-            <div className="w-20 h-20 mx-auto rounded-2xl bg-gradient-to-br from-cyan-400 via-blue-500 to-violet-600 flex items-center justify-center shadow-lg water-glow">
-              <Bot className="w-10 h-10 text-white drop-shadow-lg" />
+        {/* Logo */}
+        <div className="mb-8 relative">
+          <div className="relative inline-block">
+            <div className="absolute inset-0 bg-gradient-to-br from-violet-400 to-purple-600 rounded-3xl blur-xl opacity-40 animate-pulse" />
+            <div className="relative w-24 h-24 bg-gradient-to-br from-violet-500 to-purple-600 rounded-3xl flex items-center justify-center shadow-2xl shadow-violet-500/30">
+              <Bot className="w-12 h-12 text-white" />
             </div>
-            {/* Ripple rings around logo */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-24 h-24 rounded-2xl border-2 border-cyan-300/50 animate-ping-slow" />
+            {/* Orbiting rings */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="w-32 h-32 rounded-full border-2 border-violet-300/40 animate-[spin_20s_linear_infinite]" />
             </div>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-28 h-28 rounded-2xl border border-blue-200/30 animate-ping-slower" />
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="w-40 h-40 rounded-full border border-purple-200/30 animate-[spin_30s_linear_infinite_reverse]" />
             </div>
           </div>
-          <div className="absolute -bottom-1 -right-1 left-0 right-0 mx-auto w-fit">
-            <span className="px-2 py-0.5 bg-gradient-to-r from-cyan-100 to-blue-100 text-cyan-700 text-xs font-medium rounded-full shadow-sm">
-              Powered by Claude
+          {/* <div className="mt-4">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-violet-100 to-purple-100 text-violet-700 text-sm font-medium rounded-full shadow-sm">
+              <Sparkles className="w-4 h-4" />
+              Powered by Claude AI
             </span>
-          </div>
+          </div> */}
         </div>
 
-        <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-cyan-600 via-blue-600 to-violet-600 bg-clip-text text-transparent mb-3">
-          AI Learning Assistant
+        <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4">
+          How can I help you today?
         </h1>
-        <p className="text-gray-500 mb-8 max-w-md mx-auto">
-          Ask questions about course materials, get explanations, generate study content, and explore code examples.
+        <p className="text-slate-500 mb-10 max-w-md mx-auto text-lg">
+          Ask questions about course materials, get explanations, or generate study content.
         </p>
 
-        {/* Suggestions Grid with Water Effects */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl mx-auto">
-          {suggestions.slice(0, 4).map((category, idx) => {
+        {/* Suggestions Grid */}
+        <div className="space-y-6">
+          {suggestions.slice(0, 2).map((category, idx) => {
             const Icon = SUGGESTION_ICONS[category.category] || SUGGESTION_ICONS.default;
             return (
-              <div key={idx} className="space-y-2">
-                <div className="flex items-center gap-2 px-1">
-                  <Icon className="w-4 h-4 text-cyan-500" />
-                  <span className="text-xs font-semibold text-cyan-600 uppercase tracking-wider">
+              <div key={idx}>
+                <div className="flex items-center justify-center gap-2 mb-3">
+                  <div className="p-1.5 bg-violet-100 rounded-lg">
+                    <Icon className="w-4 h-4 text-violet-600" />
+                  </div>
+                  <span className="text-sm font-semibold text-violet-700">
                     {category.category}
                   </span>
                 </div>
-                {category.prompts.slice(0, 2).map((prompt, pIdx) => (
-                  <button
-                    key={pIdx}
-                    onClick={() => handleSuggestionClick(prompt)}
-                    className="w-full text-left p-3 bg-white/80 backdrop-blur-sm border border-cyan-200/50 rounded-xl hover:border-cyan-400 hover:bg-gradient-to-r hover:from-cyan-50 hover:to-blue-50 transition-all duration-300 text-sm text-gray-700 group water-shimmer btn-water-ripple shadow-sm hover:shadow-md"
-                  >
-                    <span className="line-clamp-2">{prompt}</span>
-                    <span className="text-cyan-500 opacity-0 group-hover:opacity-100 transition-opacity text-xs mt-1 block">
-                      Click to use
-                    </span>
-                  </button>
-                ))}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {category.prompts.slice(0, 2).map((prompt, pIdx) => (
+                    <SuggestionCard
+                      key={pIdx}
+                      prompt={prompt}
+                      onClick={() => handleSuggestionClick(prompt)}
+                    />
+                  ))}
+                </div>
               </div>
             );
           })}
+        </div>
+
+        {/* Feature badges */}
+        <div className="flex flex-wrap items-center justify-center gap-3 mt-10">
+          <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-slate-200 shadow-sm">
+            <Brain className="w-4 h-4 text-violet-500" />
+            <span className="text-sm text-slate-600">Context-aware</span>
+          </div>
+          <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-slate-200 shadow-sm">
+            <BookOpen className="w-4 h-4 text-emerald-500" />
+            <span className="text-sm text-slate-600">Course integrated</span>
+          </div>
+          <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-slate-200 shadow-sm">
+            <Zap className="w-4 h-4 text-amber-500" />
+            <span className="text-sm text-slate-600">Fast responses</span>
+          </div>
         </div>
       </div>
     </div>
   );
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] bg-gradient-to-br from-white via-cyan-50/20 to-blue-50/30">
-      {/* Sidebar with Water Effect */}
+    <div className="flex h-[calc(100vh-4rem)] bg-white">
+      {/* Sidebar */}
       <div className={cn(
-        "flex-shrink-0 border-r border-cyan-100 bg-gradient-to-b from-slate-50 via-cyan-50/30 to-blue-50/20 flex flex-col transition-all duration-300 relative",
-        sidebarCollapsed ? "w-0 overflow-hidden" : "w-72"
+        "flex-shrink-0 border-r border-slate-200 bg-gradient-to-b from-slate-50 to-white flex flex-col transition-all duration-300",
+        sidebarCollapsed ? "w-0 overflow-hidden" : "w-80"
       )}>
-        {/* Decorative water drops in sidebar */}
-        <div className="absolute top-20 right-4 w-2 h-2 rounded-full bg-cyan-300/40 animate-pulse" />
-        <div className="absolute top-40 left-6 w-1.5 h-1.5 rounded-full bg-blue-300/40 animate-pulse" style={{ animationDelay: '0.5s' }} />
-        <div className="absolute bottom-32 right-8 w-2 h-2 rounded-full bg-violet-300/40 animate-pulse" style={{ animationDelay: '1s' }} />
         {/* Sidebar Header */}
-        <div className="p-4 border-b border-gray-200 relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-cyan-50 to-blue-50 opacity-50" />
+        <div className="p-4 border-b border-slate-200">
           <button
             onClick={startNewChat}
-            className="relative w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-cyan-500 via-blue-500 to-violet-500 text-white rounded-xl hover:from-cyan-600 hover:via-blue-600 hover:to-violet-600 transition-all shadow-md hover:shadow-lg btn-water-ripple water-glow"
+            className={cn(
+              "w-full flex items-center justify-center gap-2 px-4 py-3",
+              "bg-gradient-to-r from-violet-500 to-purple-600 text-white rounded-xl",
+              "hover:from-violet-600 hover:to-purple-700 transition-all duration-200",
+              "shadow-lg shadow-violet-500/25 hover:shadow-xl hover:shadow-violet-500/30",
+              "font-medium"
+            )}
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-5 h-5" />
             New Chat
           </button>
         </div>
@@ -469,423 +614,206 @@ const Chat = () => {
         {/* Search */}
         <div className="p-3">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-cyan-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Search chats..."
-              className="w-full pl-9 pr-3 py-2 text-sm border border-cyan-200 rounded-lg bg-white/80 backdrop-blur-sm focus:ring-2 focus:ring-cyan-400 focus:border-cyan-400 transition-all"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search conversations..."
+              className="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:ring-2 focus:ring-violet-500 focus:border-violet-500 transition-all"
             />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 hover:bg-slate-100 rounded"
+              >
+                <X className="w-4 h-4 text-slate-400" />
+              </button>
+            )}
           </div>
         </div>
 
         {/* Conversations List */}
         <div className="flex-1 overflow-y-auto px-3 pb-3">
-          <p className="px-2 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
-            Recent Chats
-          </p>
-          {conversations.length === 0 ? (
-            <div className="text-center py-8 px-4">
-              <MessageSquare className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-              <p className="text-sm text-gray-400">No conversations yet</p>
-              <p className="text-xs text-gray-400 mt-1">Start a new chat to begin</p>
-            </div>
+          <div className="flex items-center justify-between px-2 py-2 mb-1">
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+              <History className="w-3.5 h-3.5" />
+              Recent Chats
+            </span>
+            <span className="text-xs text-slate-400">{filteredConversations.length}</span>
+          </div>
+
+          {filteredConversations.length === 0 ? (
+            <EmptyConversations />
           ) : (
             <div className="space-y-1">
-              {conversations.map((conv) => (
-                <div
+              {filteredConversations.map((conv) => (
+                <ConversationItem
                   key={conv.id}
-                  className={cn(
-                    "group relative flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-all",
-                    conv.id === conversationId
-                      ? "bg-gradient-to-r from-cyan-100 to-blue-100 text-cyan-900 shadow-sm"
-                      : "hover:bg-white/80 hover:shadow-sm text-gray-700"
-                  )}
+                  conv={conv}
+                  isActive={conv.id === conversationId}
                   onClick={() => loadConversation(conv.id)}
-                >
-                  <MessageSquare className={cn(
-                    "w-4 h-4 mt-0.5 flex-shrink-0",
-                    conv.id === conversationId ? "text-cyan-600" : "text-gray-400"
-                  )} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">
-                      {conv.last_message || 'New conversation'}
-                    </p>
-                    <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
-                      <Clock className="w-3 h-3" />
-                      {new Date(conv.updated_at || conv.created_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteConversation(conv.id);
-                    }}
-                    className={cn(
-                      "opacity-0 group-hover:opacity-100 p-1.5 rounded-lg transition-all",
-                      "hover:bg-red-100 text-gray-400 hover:text-red-500"
-                    )}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                  onDelete={deleteConversation}
+                />
               ))}
             </div>
           )}
+        </div>
+
+        {/* Sidebar Footer */}
+        <div className="p-3 border-t border-slate-200">
+          <div className="flex items-center justify-between px-3 py-2 bg-gradient-to-r from-violet-50 to-purple-50 rounded-xl">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+              <span className="text-xs text-slate-600">AI Online</span>
+            </div>
+            {/* <span className="text-xs text-violet-600 font-medium">Claude 3.5</span> */}
+          </div>
         </div>
       </div>
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Chat Header with Water Effect */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-cyan-100 bg-gradient-to-r from-white via-cyan-50/30 to-white relative overflow-hidden">
-          {/* Subtle water shimmer in header */}
-          <div className="absolute inset-0 water-shimmer opacity-50" />
-          <div className="flex items-center gap-3 relative z-10">
+        {/* Chat Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-white">
+          <div className="flex items-center gap-3">
             <button
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="p-2 hover:bg-cyan-100/50 rounded-lg transition-colors"
+              className="p-2 hover:bg-slate-100 rounded-xl transition-colors"
             >
               {sidebarCollapsed ? (
-                <ChevronRight className="w-5 h-5 text-cyan-600" />
+                <ChevronRight className="w-5 h-5 text-slate-600" />
               ) : (
-                <ChevronLeft className="w-5 h-5 text-cyan-600" />
+                <ChevronLeft className="w-5 h-5 text-slate-600" />
               )}
             </button>
-            <div>
-              <h1 className="text-base font-semibold bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent flex items-center gap-2">
-                <Bot className="w-5 h-5 text-cyan-500" />
-                AI Assistant
-              </h1>
-              <p className="text-xs text-gray-500">Ask questions, search materials, generate content</p>
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-gradient-to-br from-violet-500 to-purple-600 rounded-xl shadow-lg shadow-violet-500/20">
+                <Bot className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h1 className="text-base font-semibold text-slate-800">AI Learning Assistant</h1>
+                <p className="text-xs text-slate-500">Ask anything about your course materials</p>
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-2 relative z-10">
-            <span className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-cyan-100 to-blue-100 text-cyan-700 rounded-full text-xs font-medium shadow-sm">
-              <Sparkles className="w-3.5 h-3.5" />
-              Claude AI
-            </span>
-          </div>
+
+          {/* <div className="flex items-center gap-2">
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-violet-100 to-purple-100 text-violet-700 rounded-xl">
+              <Sparkles className="w-4 h-4" />
+              <span className="text-sm font-medium">Claude AI</span>
+            </div>
+          </div> */}
         </div>
 
         {/* Messages Area */}
-        <div className="flex-1 overflow-y-auto">
+        <div
+          ref={messagesContainerRef}
+          className="flex-1 overflow-y-auto"
+        >
           {messages.length === 0 ? (
             renderWelcome()
           ) : (
-            <div className="max-w-4xl mx-auto">
+            <div>
               {messages.map((msg, idx) => renderMessage(msg, idx))}
+
+              {/* Loading indicator */}
               {loading && (
-                <div className="flex gap-4 px-4 py-6 bg-gradient-to-r from-cyan-50/30 to-blue-50/30">
-                  <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-400 via-blue-500 to-violet-500 flex items-center justify-center water-glow">
-                    <Bot className="w-4 h-4 text-white" />
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex gap-1.5">
-                      {[0, 1, 2].map((i) => (
-                        <div
-                          key={i}
-                          className="w-2.5 h-2.5 rounded-full bg-gradient-to-b from-cyan-400 to-blue-500"
-                          style={{
-                            animation: 'water-drop 1.5s ease-in-out infinite',
-                            animationDelay: `${i * 0.2}s`
-                          }}
-                        />
-                      ))}
+                <div className="px-4 py-6 bg-gradient-to-r from-slate-50/80 to-violet-50/30">
+                  <div className="max-w-3xl mx-auto flex gap-4">
+                    <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-sm">
+                      <Bot className="w-5 h-5 text-white animate-pulse" />
                     </div>
-                    <span className="text-sm bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent font-medium">
-                      Thinking...
-                    </span>
+                    <div className="flex items-center gap-3">
+                      <TypingIndicator />
+                      <span className="text-sm text-violet-600 font-medium">Thinking...</span>
+                    </div>
                   </div>
                 </div>
               )}
-              <div ref={messagesEndRef} className="h-4" />
+
+              <div ref={messagesEndRef} className="h-6" />
             </div>
           )}
         </div>
 
-        {/* Input Area with Water Effect */}
-        <div className="border-t border-cyan-100 bg-gradient-to-r from-white via-cyan-50/50 to-white p-4 relative overflow-hidden">
-          {/* Subtle wave at top of input area */}
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-cyan-200 via-blue-300 to-violet-200 opacity-50" />
-          <div className="max-w-4xl mx-auto relative z-10">
-            <div className="flex items-end gap-3">
-              <div className="flex-1 relative">
-                <textarea
-                  ref={inputRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Ask a question, search materials, or request content..."
-                  rows={1}
-                  className="w-full px-4 py-3 pr-12 border border-cyan-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition-all bg-white/80 backdrop-blur-sm shadow-sm"
-                  style={{ maxHeight: '120px' }}
-                  onInput={(e) => {
-                    e.target.style.height = 'auto';
-                    e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
-                  }}
-                />
-              </div>
-              <button
-                onClick={handleSend}
-                disabled={!input.trim() || loading}
+        {/* Input Area */}
+        <div className="border-t border-slate-200 bg-white p-4">
+          <div className="max-w-3xl mx-auto">
+            <div className="relative">
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Ask a question about your course materials..."
+                rows={1}
                 className={cn(
-                  "p-3 rounded-xl transition-all duration-200 btn-water-ripple",
-                  input.trim() && !loading
-                    ? "bg-gradient-to-r from-cyan-500 via-blue-500 to-violet-500 text-white hover:from-cyan-600 hover:via-blue-600 hover:to-violet-600 shadow-md hover:shadow-lg water-glow"
-                    : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                  "w-full px-4 py-3.5 pr-24 border-2 border-slate-200 rounded-2xl resize-none",
+                  "focus:outline-none focus:ring-0 focus:border-violet-500 transition-all",
+                  "bg-slate-50 focus:bg-white placeholder:text-slate-400"
                 )}
-              >
-                {loading ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : (
-                  <Send className="w-5 h-5" />
-                )}
-              </button>
+                style={{ maxHeight: '150px' }}
+                onInput={(e) => {
+                  e.target.style.height = 'auto';
+                  e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px';
+                }}
+              />
+
+              {/* Input actions */}
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                <button
+                  onClick={handleSend}
+                  disabled={!input.trim() || loading}
+                  className={cn(
+                    "p-2.5 rounded-xl transition-all duration-200",
+                    input.trim() && !loading
+                      ? "bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-lg shadow-violet-500/30 hover:shadow-xl hover:shadow-violet-500/40"
+                      : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                  )}
+                >
+                  {loading ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <Send className="w-5 h-5" />
+                  )}
+                </button>
+              </div>
             </div>
-            <p className="text-xs text-gray-400 text-center mt-2">
-              Press <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-600">Enter</kbd> to send,
-              <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-600 ml-1">Shift+Enter</kbd> for new line
-            </p>
+
+            <div className="flex items-center justify-between mt-2 px-1">
+              <p className="text-xs text-slate-400">
+                <kbd className="px-1.5 py-0.5 bg-slate-100 rounded text-slate-500 text-[10px]">Enter</kbd>
+                <span className="mx-1">to send</span>
+                <kbd className="px-1.5 py-0.5 bg-slate-100 rounded text-slate-500 text-[10px]">Shift+Enter</kbd>
+                <span className="mx-1">for new line</span>
+              </p>
+              <p className="text-xs text-slate-400">
+                {input.length > 0 && `${input.length} characters`}
+              </p>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Water Effect Animations */}
+      {/* Scroll to Top Button */}
+      <button
+        onClick={scrollToTop}
+        className={cn(
+          "fixed bottom-24 right-6 z-40 p-3 bg-violet-600 text-white rounded-full",
+          "shadow-lg shadow-violet-500/30 transition-all duration-300",
+          "hover:bg-violet-700 hover:scale-110",
+          showScrollTop ? "translate-y-0 opacity-100" : "translate-y-20 opacity-0 pointer-events-none"
+        )}
+      >
+        <ArrowUpToLine className="w-5 h-5" />
+      </button>
+
+      {/* CSS Animations */}
       <style>{`
-        @keyframes bounce {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-4px); }
-        }
-
-        /* Floating Bubbles */
-        .bubble {
-          position: absolute;
-          bottom: -50px;
-          background: linear-gradient(135deg, rgba(6, 182, 212, 0.3), rgba(59, 130, 246, 0.2));
-          border-radius: 50%;
-          animation: float-up linear infinite;
-          box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.5);
-        }
-
-        .bubble::before {
-          content: '';
-          position: absolute;
-          top: 20%;
-          left: 20%;
-          width: 30%;
-          height: 30%;
-          background: rgba(255, 255, 255, 0.6);
-          border-radius: 50%;
-        }
-
-        @keyframes float-up {
-          0% {
-            transform: translateY(0) scale(1);
-            opacity: 0;
-          }
-          10% {
-            opacity: 0.6;
-          }
-          90% {
-            opacity: 0.6;
-          }
-          100% {
-            transform: translateY(-100vh) scale(0.8);
-            opacity: 0;
-          }
-        }
-
-        /* Wave Animations */
-        .wave {
-          position: absolute;
-          bottom: 0;
-          left: 0;
-          width: 200%;
-          height: 100%;
-          color: rgb(6, 182, 212);
-        }
-
-        .wave-1 {
-          animation: wave-move 8s linear infinite;
-          z-index: 3;
-        }
-
-        .wave-2 {
-          animation: wave-move 12s linear infinite reverse;
-          z-index: 2;
-          color: rgb(59, 130, 246);
-        }
-
-        .wave-3 {
-          animation: wave-move 16s linear infinite;
-          z-index: 1;
-          color: rgb(139, 92, 246);
-        }
-
-        @keyframes wave-move {
-          0% {
-            transform: translateX(0);
-          }
-          100% {
-            transform: translateX(-50%);
-          }
-        }
-
-        /* Water Ripple Effect */
-        .water-ripple {
-          position: absolute;
-          border-radius: 50%;
-          border: 2px solid rgba(6, 182, 212, 0.3);
-          animation: ripple 3s ease-out infinite;
-        }
-
-        .water-ripple-1 {
-          width: 100px;
-          height: 100px;
-          top: 20%;
-          left: 10%;
-          animation-delay: 0s;
-        }
-
-        .water-ripple-2 {
-          width: 150px;
-          height: 150px;
-          top: 60%;
-          right: 15%;
-          animation-delay: 1s;
-        }
-
-        .water-ripple-3 {
-          width: 80px;
-          height: 80px;
-          bottom: 30%;
-          left: 30%;
-          animation-delay: 2s;
-        }
-
-        @keyframes ripple {
-          0% {
-            transform: scale(0.5);
-            opacity: 0.8;
-          }
-          100% {
-            transform: scale(2);
-            opacity: 0;
-          }
-        }
-
-        /* Water Glow Effect */
-        .water-glow {
-          animation: water-glow 3s ease-in-out infinite;
-        }
-
-        @keyframes water-glow {
-          0%, 100% {
-            box-shadow:
-              0 0 20px rgba(6, 182, 212, 0.4),
-              0 0 40px rgba(59, 130, 246, 0.2),
-              0 0 60px rgba(139, 92, 246, 0.1);
-          }
-          50% {
-            box-shadow:
-              0 0 30px rgba(6, 182, 212, 0.6),
-              0 0 60px rgba(59, 130, 246, 0.3),
-              0 0 90px rgba(139, 92, 246, 0.2);
-          }
-        }
-
-        /* Ping animations for logo ripples */
-        .animate-ping-slow {
-          animation: ping-slow 2s cubic-bezier(0, 0, 0.2, 1) infinite;
-        }
-
-        .animate-ping-slower {
-          animation: ping-slow 3s cubic-bezier(0, 0, 0.2, 1) infinite;
-          animation-delay: 0.5s;
-        }
-
-        @keyframes ping-slow {
-          0% {
-            transform: scale(1);
-            opacity: 0.5;
-          }
-          75%, 100% {
-            transform: scale(1.5);
-            opacity: 0;
-          }
-        }
-
-        /* Button Ripple Effect */
-        .btn-water-ripple {
-          position: relative;
-          overflow: hidden;
-        }
-
-        .btn-water-ripple::after {
-          content: '';
-          position: absolute;
-          top: 50%;
-          left: 50%;
-          width: 0;
-          height: 0;
-          background: rgba(255, 255, 255, 0.3);
-          border-radius: 50%;
-          transform: translate(-50%, -50%);
-          transition: width 0.6s, height 0.6s;
-        }
-
-        .btn-water-ripple:active::after {
-          width: 200px;
-          height: 200px;
-        }
-
-        /* Water Drop Animation */
-        @keyframes water-drop {
-          0% {
-            transform: translateY(-20px) scale(1);
-            opacity: 0;
-          }
-          20% {
-            opacity: 1;
-          }
-          80% {
-            opacity: 1;
-          }
-          100% {
-            transform: translateY(20px) scale(0.8);
-            opacity: 0;
-          }
-        }
-
-        /* Shimmer effect for cards */
-        .water-shimmer {
-          position: relative;
-          overflow: hidden;
-        }
-
-        .water-shimmer::before {
-          content: '';
-          position: absolute;
-          top: 0;
-          left: -100%;
-          width: 100%;
-          height: 100%;
-          background: linear-gradient(
-            90deg,
-            transparent,
-            rgba(6, 182, 212, 0.1),
-            transparent
-          );
-          animation: shimmer 3s infinite;
-        }
-
-        @keyframes shimmer {
-          0% {
-            left: -100%;
-          }
-          100% {
-            left: 100%;
-          }
+        @keyframes typing-bounce {
+          0%, 60%, 100% { transform: translateY(0); }
+          30% { transform: translateY(-8px); }
         }
       `}</style>
     </div>

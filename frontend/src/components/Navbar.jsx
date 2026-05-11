@@ -136,7 +136,7 @@ function Navbar() {
             </div>
             <div className="hidden sm:block">
               <span className="text-lg font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
-                LearnAI
+                Learn
               </span>
               <span className="text-lg font-light text-gray-600">360</span>
             </div>
