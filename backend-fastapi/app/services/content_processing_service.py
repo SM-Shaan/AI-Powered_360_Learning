@@ -372,6 +372,9 @@ class ContentProcessingService:
 
         # Store chunks and generate embeddings
         stored_chunks = []
+        embedded_count = 0
+        embedding_errors = []
+        used_hash_fallback = False
         for chunk in chunks:
             # Sanitize chunk text for database storage (removes null bytes)
             chunk_text = self._sanitize_for_db(chunk['text'])
@@ -379,12 +382,25 @@ class ContentProcessingService:
             if not chunk_text.strip():
                 continue  # Skip empty chunks
 
-            # Generate embedding
+            # Generate embedding. A failure here is not fatal - the chunk is
+            # still stored and findable by keyword - but it does mean the chunk
+            # is invisible to semantic search, so the count is reported back to
+            # the caller rather than silently swallowed.
             try:
                 embedding = await self.embedding_service.embed_document(chunk_text)
+                if embedding:
+                    embedded_count += 1
+                else:
+                    embedding_errors.append("embedding service returned no vector")
             except Exception as e:
                 print(f"Embedding error for chunk: {e}")
+                embedding_errors.append(str(e))
                 embedding = None
+
+            # A hash-fallback embedding counts as "stored" but is not semantic,
+            # so treat it as a failure for reporting purposes.
+            if getattr(self.embedding_service, "used_fallback_embedding", False):
+                used_hash_fallback = True
 
             # Build metadata
             metadata = {
@@ -442,12 +458,45 @@ class ContentProcessingService:
         except Exception as e:
             print(f"Error updating content embedding: {e}")
 
-        return {
+        result = {
             "success": True,
             "chunks_created": len(stored_chunks),
+            "chunks_embedded": embedded_count,
             "is_code": is_code,
             "file_extension": extension
         }
+
+        # Two distinct degraded outcomes, both reported rather than swallowed:
+        # missing embeddings (chunk is keyword-only) and hash-fallback
+        # embeddings (chunk is stored but semantically meaningless).
+        if embedded_count < len(stored_chunks):
+            result["semantic_search_degraded"] = True
+            result["embedding_error"] = (
+                embedding_errors[0] if embedding_errors else "unknown embedding failure"
+            )
+            print(
+                f"WARNING: content {content_id} indexed with "
+                f"{embedded_count}/{len(stored_chunks)} chunks embedded. "
+                f"Semantic search will be incomplete. "
+                f"First error: {result['embedding_error']}"
+            )
+
+        if used_hash_fallback:
+            result["semantic_search_degraded"] = True
+            result["used_hash_fallback"] = True
+            result.setdefault(
+                "embedding_error",
+                "HUGGINGFACE_TOKEN not set - stored hash embeddings, which are "
+                "not semantic. Semantic search results will be meaningless."
+            )
+            print(
+                f"WARNING: content {content_id} was embedded with the hash "
+                f"fallback, not a real embedding model. Semantic search over "
+                f"this content will return arbitrary results. "
+                f"Set HUGGINGFACE_TOKEN in .env and re-index."
+            )
+
+        return result
 
     async def process_handwritten_content(
         self,

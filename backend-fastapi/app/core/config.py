@@ -1,6 +1,5 @@
 from pydantic_settings import BaseSettings
 from typing import Optional
-import os
 
 class Settings(BaseSettings):
     # Supabase
@@ -24,6 +23,19 @@ class Settings(BaseSettings):
     # OpenRouter API (Alternative)
     openrouter_api_key: Optional[str] = None
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
+
+    # Force a provider when both keys are set: "anthropic" or "openrouter".
+    # Leave unset to let the resolver choose (Anthropic first).
+    llm_provider: Optional[str] = None
+
+    # Model overrides. Leave unset to use the defaults in llm_client.
+    openrouter_model: Optional[str] = None
+    anthropic_model: Optional[str] = None
+
+    # Route OpenRouter traffic to a ':free' model. Free models cost nothing and
+    # need no credit balance, but are rate-limited - useful for development,
+    # not for production.
+    use_free_models: bool = False
 
     # HuggingFace (for embeddings)
     huggingface_token: Optional[str] = None

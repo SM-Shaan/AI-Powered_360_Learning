@@ -4,11 +4,7 @@ Generation Routes - Part 3: AI-Generated Learning Materials
 
 from fastapi import APIRouter, HTTPException, Depends, status
 from app.models.generation_schemas import (
-    GenerateNotesRequest, GenerateNotesResponse,
-    GenerateSlidesRequest, GenerateSlidesResponse,
-    GenerateCodeRequest, GenerateCodeResponse,
-    GenerateQuizRequest, GenerateQuizResponse,
-    WikipediaSearchResponse
+    GenerateNotesRequest, GenerateSlidesRequest, GenerateCodeRequest, GenerateQuizRequest
 )
 from app.services.generation_service import get_generation_service
 from app.services.wikipedia_service import get_wikipedia_service

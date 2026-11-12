@@ -3,14 +3,13 @@ Forum Routes for Community Forum & Bot Support
 """
 
 from fastapi import APIRouter, HTTPException, Depends, Query, status
-from typing import Optional, List
+from typing import Optional
 from app.models.forum_schemas import (
     CreatePostRequest, UpdatePostRequest, CreateCommentRequest,
-    VoteRequest, MarkAnswerRequest, PostResponse, PostDetailResponse,
-    PostListResponse, CommentResponse
+    VoteRequest, MarkAnswerRequest
 )
 from app.services.forum_service import get_forum_service
-from app.routes.auth import get_current_user, require_admin
+from app.routes.auth import get_current_user
 
 router = APIRouter(prefix="/forum", tags=["Forum"])
 

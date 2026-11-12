@@ -1,16 +1,15 @@
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Query, status
 from fastapi.responses import StreamingResponse
-from typing import Optional, List
-from app.models.schemas import ContentUpdate, ContentResponse, ContentStats
-from app.core.supabase import get_supabase
-from app.core.security import get_current_user, get_current_user_optional, require_admin
+from typing import Optional
+from app.models.schemas import ContentUpdate
+from app.core.supabase import get_supabase, get_supabase_admin
+from app.core.security import get_current_user_optional, require_admin
 from app.core.config import settings
 from app.services.content_processing_service import get_content_processing_service
 from app.services.ocr_service import get_ocr_service
 import uuid
 import json
 import os
-import aiofiles
 
 router = APIRouter(prefix="/content", tags=["Content"])
 
@@ -226,7 +225,7 @@ async def upload_content(
             detail=f"File too large. Maximum size is {settings.max_file_size // (1024*1024)}MB"
         )
 
-    supabase = get_supabase()
+    supabase = get_supabase_admin()
 
     # Check for duplicates unless force_upload is True
     if not force_upload:
@@ -315,13 +314,26 @@ async def upload_content(
     async def background_indexing():
         try:
             processing_service = get_content_processing_service()
-            await processing_service.process_content(
+            outcome = await processing_service.process_content(
                 content_id=content_id,
                 file_content=file_content,
                 file_name=file.filename,
                 mime_type=file.content_type or "application/octet-stream"
             )
-            print(f"Background indexing completed for {content_id}")
+            if outcome.get("semantic_search_degraded"):
+                print(
+                    f"Background indexing completed for {content_id} WITH DEGRADED "
+                    f"SEMANTIC SEARCH: {outcome.get('chunks_embedded')}/"
+                    f"{outcome.get('chunks_created')} chunks embedded"
+                    f"{', via hash fallback' if outcome.get('used_hash_fallback') else ''}. "
+                    f"Set HUGGINGFACE_TOKEN in .env and re-index. "
+                    f"Error: {outcome.get('embedding_error')}"
+                )
+            else:
+                print(
+                    f"Background indexing completed for {content_id}: "
+                    f"{outcome.get('chunks_created')} chunks, all embedded"
+                )
         except Exception as e:
             print(f"Background indexing failed for {content_id}: {e}")
 
@@ -381,7 +393,7 @@ async def upload_handwritten_notes(
             detail=f"File too large. Maximum size is {settings.max_file_size // (1024*1024)}MB"
         )
 
-    supabase = get_supabase()
+    supabase = get_supabase_admin()
 
     # Check for duplicates unless force_upload is True
     if not force_upload:
@@ -520,7 +532,7 @@ async def reprocess_handwritten_ocr(
     admin: dict = Depends(require_admin)
 ):
     """Re-run OCR on an existing handwritten notes image"""
-    supabase = get_supabase()
+    supabase = get_supabase_admin()
 
     # Get content
     result = supabase.table("content").select("*").eq("id", content_id).execute()
@@ -606,7 +618,7 @@ async def update_content(
     admin: dict = Depends(require_admin)
 ):
     """Update content metadata (Admin only)"""
-    supabase = get_supabase()
+    supabase = get_supabase_admin()
 
     # Check if content exists
     existing = supabase.table("content").select("*").eq("id", content_id).execute()
@@ -656,7 +668,7 @@ async def delete_content(
     admin: dict = Depends(require_admin)
 ):
     """Delete content (Admin only)"""
-    supabase = get_supabase()
+    supabase = get_supabase_admin()
 
     # Check if content exists
     existing = supabase.table("content").select("*").eq("id", content_id).execute()
@@ -686,7 +698,7 @@ async def reprocess_content(
     admin: dict = Depends(require_admin)
 ):
     """Reprocess content for search indexing (Admin only)"""
-    supabase = get_supabase()
+    supabase = get_supabase_admin()
 
     # Get content
     result = supabase.table("content").select("*").eq("id", content_id).execute()
@@ -735,7 +747,7 @@ async def reprocess_all_content(
     admin: dict = Depends(require_admin)
 ):
     """Reprocess all content for search indexing (Admin only)"""
-    supabase = get_supabase()
+    supabase = get_supabase_admin()
 
     # Get all content
     result = supabase.table("content").select("id, file_path, file_name, mime_type").execute()
@@ -809,7 +821,7 @@ async def download_content(
                 "Content-Disposition": f'attachment; filename="{content["file_name"]}"'
             }
         )
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="File not found in storage"

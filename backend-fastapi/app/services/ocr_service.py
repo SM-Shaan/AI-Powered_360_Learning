@@ -10,7 +10,7 @@ import base64
 import httpx
 from typing import Optional, List, Dict, Any
 from PIL import Image, ImageEnhance, ImageFilter
-from app.core.config import settings
+from app.services import llm_client
 
 
 class OCRService:
@@ -22,7 +22,9 @@ class OCRService:
     def __init__(self):
         """Initialize OCR service."""
         self.tesseract_available = self._check_tesseract()
-        self.openrouter_key = getattr(settings, 'openrouter_api_key', None)
+        # Truthy when any LLM provider is configured; the AI-OCR paths below
+        # gate on this rather than on a specific provider's key.
+        self.openrouter_key = llm_client.is_configured()
 
     def _check_tesseract(self) -> bool:
         """Check if Tesseract is installed."""
@@ -149,23 +151,11 @@ class OCRService:
 
     async def _structure_text_with_ai(self, raw_text: str) -> Optional[str]:
         """Use AI to structure raw OCR text into academic format."""
-        if not self.openrouter_key or len(raw_text) < 50:
+        if not llm_client.is_configured() or len(raw_text) < 50:
             return None
 
         try:
-            async with httpx.AsyncClient(timeout=90.0) as client:
-                response = await client.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.openrouter_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": "anthropic/claude-3.5-haiku",  # Fast model for text processing
-                        "messages": [
-                            {
-                                "role": "user",
-                                "content": f"""Transform this raw OCR-extracted text into professionally structured academic notes using markdown.
+            prompt = f"""Transform this raw OCR-extracted text into professionally structured academic notes using markdown.
 
 ## FORMATTING REQUIREMENTS:
 
@@ -215,17 +205,17 @@ code here
 {raw_text}
 
 ## STRUCTURED MARKDOWN OUTPUT:"""
-                            }
-                        ],
-                        "max_tokens": 4000,
-                        "temperature": 0.1
-                    }
-                )
 
-                if response.status_code == 200:
-                    result = response.json()
-                    structured = result['choices'][0]['message']['content']
-                    return self._clean_ocr_output(structured)
+            result = await llm_client.call_llm(
+                system_prompt="You format raw OCR text into clean academic markdown.",
+                user_prompt=prompt,
+                max_tokens=4000,
+                temperature=0.1,
+                title="AI Learning Platform OCR"
+            )
+            structured = result.get("content")
+            if structured:
+                return self._clean_ocr_output(structured)
         except Exception as e:
             print(f"Text structuring error: {e}")
 
@@ -235,10 +225,10 @@ code here
         self,
         image: Image.Image
     ) -> Dict[str, Any]:
-        """Extract text using AI (Claude via OpenRouter)."""
-        if not self.openrouter_key:
+        """Extract text using an AI vision model."""
+        if not llm_client.is_configured():
             raise Exception(
-                "AI OCR requires OPENROUTER_API_KEY in .env file. "
+                "AI OCR requires OPENROUTER_API_KEY or ANTHROPIC_API_KEY in .env file. "
                 "Alternatively, install Tesseract OCR."
             )
 
@@ -246,33 +236,9 @@ code here
         base64_image = self._image_to_base64(image)
         print(f"Image converted to base64, length: {len(base64_image)}")
 
-        # Call OpenRouter API with vision model
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                print("Calling OpenRouter API for OCR...")
-                response = await client.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.openrouter_key}",
-                        "Content-Type": "application/json",
-                        "HTTP-Referer": "http://localhost:3000",
-                        "X-Title": "AI Learning Platform OCR"
-                    },
-                    json={
-                        "model": "anthropic/claude-sonnet-4",
-                        "messages": [
-                            {
-                                "role": "user",
-                                "content": [
-                                    {
-                                        "type": "image_url",
-                                        "image_url": {
-                                            "url": f"data:image/png;base64,{base64_image}"
-                                        }
-                                    },
-                                    {
-                                        "type": "text",
-                                        "text": """You are an expert academic document processor. Extract ALL text from this handwritten/typed notes image and structure it into professional academic markdown format.
+            print(f"Calling {llm_client.get_provider()} vision model for OCR...")
+            prompt = """You are an expert academic document processor. Extract ALL text from this handwritten/typed notes image and structure it into professional academic markdown format.
 
 ## MANDATORY OUTPUT STRUCTURE:
 
@@ -355,37 +321,27 @@ def example():
 Start directly with the structured markdown content. Do NOT include any preamble like "Here is the extracted text" - just output the formatted notes.
 
 BEGIN EXTRACTION:"""
-                                    }
-                                ]
-                            }
-                        ],
-                        "max_tokens": 8000,
-                        "temperature": 0.1  # Low temperature for accurate extraction
-                    }
-                )
 
-                print(f"OpenRouter response status: {response.status_code}")
+            result = await llm_client.call_llm_vision(
+                prompt=prompt,
+                base64_image=base64_image,
+                media_type="image/png",
+                max_tokens=8000,
+                title="AI Learning Platform OCR"
+            )
 
-                if response.status_code != 200:
-                    error_text = response.text
-                    print(f"OpenRouter error: {error_text}")
-                    raise Exception(f"AI OCR failed (status {response.status_code}): {error_text[:200]}")
+            # Clean up the output - remove any preamble if the model added it
+            extracted_text = self._clean_ocr_output(result["content"])
 
-                result = response.json()
-                extracted_text = result['choices'][0]['message']['content']
+            print(f"OCR extracted {len(extracted_text)} characters")
 
-                # Clean up the output - remove any preamble if the model added it
-                extracted_text = self._clean_ocr_output(extracted_text)
-
-                print(f"OCR extracted {len(extracted_text)} characters")
-
-                return {
-                    'text': extracted_text,
-                    'confidence': 0.90,  # AI generally has good accuracy
-                    'engine': 'ai-vision-claude',
-                    'word_count': len(extracted_text.split()),
-                    'structured': True
-                }
+            return {
+                'text': extracted_text,
+                'confidence': 0.90,  # AI generally has good accuracy
+                'engine': 'ai-vision-claude',
+                'word_count': len(extracted_text.split()),
+                'structured': True
+            }
         except httpx.TimeoutException:
             raise Exception("AI OCR timed out. Try with a smaller image.")
         except httpx.RequestError as e:

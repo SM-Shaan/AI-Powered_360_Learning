@@ -8,7 +8,6 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 from app.core.supabase import get_supabase_admin
 from app.services.retrieval_service import get_retrieval_service
-from app.services.generation_service import get_generation_service
 
 
 class ForumService:

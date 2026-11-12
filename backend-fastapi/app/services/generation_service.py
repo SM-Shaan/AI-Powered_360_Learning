@@ -6,22 +6,18 @@ Internal Context: Course materials via Part 2 semantic search (RAG)
 External Context: Wikipedia via MCP-style wrapper
 """
 
-import httpx
 from typing import Optional, Dict, List
-from app.core.config import settings
 from app.services.wikipedia_service import get_wikipedia_service
 from app.services.retrieval_service import get_retrieval_service
+from app.services import llm_client
 import json
 
 
 class GenerationService:
-    """Service for AI-powered content generation using OpenRouter"""
+    """Service for AI-powered content generation"""
 
     def __init__(self):
-        self.api_key = settings.openrouter_api_key
-        self.base_url = settings.openrouter_base_url
-        # Use Claude Sonnet via OpenRouter
-        self.model = "anthropic/claude-sonnet-4"
+        self.model = llm_client.active_model()
 
     async def _get_internal_context(
         self,
@@ -97,13 +93,12 @@ class GenerationService:
             }
 
     def _ensure_api_key(self):
-        """Ensure OpenRouter API key is available"""
-        if not self.api_key or self.api_key == "your-openrouter-api-key":
-            raise ValueError("OpenRouter API key not configured. Please set OPENROUTER_API_KEY in .env")
+        """Ensure an LLM provider is configured"""
+        llm_client.ensure_configured()
 
     async def _call_openrouter(self, system_prompt: str, user_prompt: str) -> Dict:
         """
-        Make a request to OpenRouter API
+        Generate a completion from the configured LLM provider.
 
         Args:
             system_prompt: System message for the AI
@@ -112,39 +107,12 @@ class GenerationService:
         Returns:
             API response with content and usage info
         """
-        self._ensure_api_key()
-
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "http://localhost:5173",
-            "X-Title": "AI Learning Platform"
-        }
-
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            "max_tokens": 4096,
-            "temperature": 0.7
-        }
-
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers=headers,
-                json=payload
-            )
-            response.raise_for_status()
-            data = response.json()
-
-            return {
-                "content": data["choices"][0]["message"]["content"],
-                "usage": data.get("usage", {}),
-                "model": data.get("model", self.model)
-            }
+        return await llm_client.call_llm(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=4096,
+            temperature=0.7
+        )
 
     async def generate_theory_notes(
         self,

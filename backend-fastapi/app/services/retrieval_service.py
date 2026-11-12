@@ -6,7 +6,6 @@ Vector similarity search and content retrieval
 from typing import List, Optional, Dict, Any
 from app.services.embedding_service import get_embedding_service
 from app.core.supabase import get_supabase_admin
-import json
 
 
 class RetrievalService:

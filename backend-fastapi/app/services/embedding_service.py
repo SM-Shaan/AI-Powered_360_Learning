@@ -23,8 +23,21 @@ class EmbeddingService:
         self.dimension = 768
         self.hf_token = getattr(settings, 'huggingface_token', None)
 
+        # Set whenever _generate_simple_embedding runs. Sticky for the life of
+        # the service so a single degraded call is still visible afterwards.
+        self.used_fallback_embedding = False
+
         # Use HuggingFace Inference Router API
         self.hf_api_url = f"https://router.huggingface.co/hf-inference/models/{self.model_name}"
+
+    def is_semantic(self) -> bool:
+        """
+        True when real (meaning-bearing) embeddings are available.
+
+        False means calls will fall back to hash embeddings, which look valid
+        but make semantic search meaningless - see _generate_simple_embedding.
+        """
+        return bool(self.hf_token) and not self.used_fallback_embedding
 
     def _get_headers(self) -> dict:
         """Get headers for HuggingFace API"""
@@ -85,10 +98,21 @@ class EmbeddingService:
 
     async def _generate_simple_embedding(self, text: str) -> List[float]:
         """
-        Generate a simple hash-based embedding as fallback.
-        This is NOT semantic but allows the system to work without external API.
+        Generate a hash-based embedding as a fallback.
+
+        WARNING: these vectors carry no semantic meaning - they are MD5 digests
+        shaped like an embedding. Similarity between two of them is effectively
+        random, so semantic search over hash-embedded content returns confident
+        but meaningless results. The fallback exists so ingestion doesn't hard
+        fail without a HuggingFace token; it is not a substitute for real
+        embeddings.
+
+        `used_fallback_embedding` is set so callers can detect this and warn,
+        rather than treating the returned vector as a successful embedding.
         """
         import hashlib
+
+        self.used_fallback_embedding = True
 
         # Create deterministic embedding from text hash
         text_bytes = text.encode('utf-8')
@@ -193,7 +217,7 @@ class EmbeddingService:
                 if isinstance(result, list):
                     all_embeddings.extend(result)
                 else:
-                    raise ValueError(f"Unexpected batch response format")
+                    raise ValueError("Unexpected batch response format")
 
             except Exception as e:
                 error_str = str(e).lower()

@@ -1,0 +1,25 @@
+[tool.pytest.ini_options]
+# asyncio_mode=auto so async tests don't each need an explicit marker.
+asyncio_mode = "auto"
+testpaths = ["app", "eval", "tests"]
+python_files = ["test_*.py"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+# Scoped to correctness rather than style: F catches real defects (undefined
+# names, unused imports, shadowed variables) and E9 catches syntax/IO errors.
+# The stylistic and modernization rule sets (UP, B, SIM, ...) would flag ~700
+# pre-existing issues across this codebase; enforcing them in CI would mean a
+# mass rewrite rather than a useful gate. Add them deliberately if the codebase
+# is ever modernized.
+select = ["F", "E9"]
+
+# F841 (assigned-but-unused local) is frequently intentional here - results are
+# bound for readability inside try blocks even when only used on some paths.
+ignore = ["F841"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # re-exports are the point of these files

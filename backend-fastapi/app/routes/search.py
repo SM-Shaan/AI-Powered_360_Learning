@@ -4,11 +4,7 @@ Search Routes - Part 2: Intelligent Search Engine
 
 from fastapi import APIRouter, HTTPException, Depends, status, Query
 from app.models.search_schemas import (
-    SemanticSearchRequest, SemanticSearchResponse,
-    HybridSearchRequest, CodeSearchRequest, CodeSearchResponse,
-    RAGQuestionRequest, RAGResponse,
-    SimilarContentRequest, ContentSearchResponse,
-    ChunkResult, ContentResult, CodeResult, SourceCitation
+    SemanticSearchRequest, HybridSearchRequest, CodeSearchRequest, RAGQuestionRequest, ChunkResult, CodeResult
 )
 from app.services.retrieval_service import get_retrieval_service
 from app.services.rag_service import get_rag_service

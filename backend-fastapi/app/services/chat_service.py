@@ -7,14 +7,10 @@ Provides a unified chat interface that integrates:
 - Conversation context management
 """
 
-import httpx
-import json
 import uuid
 from typing import Optional, Dict, List, Tuple
-from datetime import datetime
-from app.core.config import settings
 from app.services.wikipedia_service import get_wikipedia_service
-from app.core.supabase import get_supabase
+from app.services import llm_client
 
 # Try to import retrieval service (Part 2)
 try:
@@ -29,16 +25,13 @@ class ChatService:
     """Service for conversational AI chat with course context"""
 
     def __init__(self):
-        self.api_key = settings.openrouter_api_key
-        self.base_url = settings.openrouter_base_url
-        self.model = "anthropic/claude-sonnet-4"
+        self.model = llm_client.active_model()
         # Use database for persistent storage
         self._use_db = True
 
     def _ensure_api_key(self):
-        """Ensure OpenRouter API key is available"""
-        if not self.api_key or self.api_key == "your-openrouter-api-key":
-            raise ValueError("OpenRouter API key not configured")
+        """Ensure an LLM provider is configured"""
+        llm_client.ensure_configured()
 
     async def _call_openrouter(
         self,
@@ -46,41 +39,14 @@ class ChatService:
         system_prompt: str,
         max_tokens: int = 2048
     ) -> Dict:
-        """Make a request to OpenRouter API with conversation history"""
-        self._ensure_api_key()
-
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "http://localhost:5173",
-            "X-Title": "AI Learning Platform Chat"
-        }
-
-        # Build messages array with system prompt
-        api_messages = [{"role": "system", "content": system_prompt}]
-        api_messages.extend(messages)
-
-        payload = {
-            "model": self.model,
-            "messages": api_messages,
-            "max_tokens": max_tokens,
-            "temperature": 0.7
-        }
-
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers=headers,
-                json=payload
-            )
-            response.raise_for_status()
-            data = response.json()
-
-            return {
-                "content": data["choices"][0]["message"]["content"],
-                "usage": data.get("usage", {}),
-                "model": data.get("model", self.model)
-            }
+        """Send conversation history to the configured LLM provider"""
+        return await llm_client.call_llm_messages(
+            system_prompt=system_prompt,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=0.7,
+            title="AI Learning Platform Chat"
+        )
 
     def _is_file_request(self, query: str) -> Tuple[bool, Optional[str]]:
         """Detect if user is asking for a specific file and extract filename."""
@@ -1094,7 +1060,7 @@ WRONG RESPONSE:
             context_message += f"User Request: {user_message}\n"
             if requested_language:
                 context_message += f"Requested Language: {requested_language.upper()}\n"
-            context_message += f"Issues Found:\n"
+            context_message += "Issues Found:\n"
             for issue in context_validation['issues']:
                 context_message += f"- {issue}\n"
             context_message += "\nIMPORTANT: Be honest with the user about these limitations.\n"

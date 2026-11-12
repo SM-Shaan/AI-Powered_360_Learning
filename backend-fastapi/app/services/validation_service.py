@@ -9,9 +9,8 @@ import subprocess
 import tempfile
 import os
 import json
-from typing import Optional, Dict, List, Tuple
-import httpx
-from app.core.config import settings
+from typing import Optional, Dict, List
+from app.services import llm_client
 from app.core.supabase import get_supabase_admin
 
 
@@ -27,9 +26,7 @@ class ValidationService:
     }
 
     def __init__(self):
-        self.api_key = settings.openrouter_api_key
-        self.base_url = settings.openrouter_base_url
-        self.model = "anthropic/claude-sonnet-4"
+        self.model = llm_client.active_model()
 
     # ==================== CODE VALIDATION ====================
 
@@ -416,14 +413,14 @@ class ValidationService:
         Returns:
             AI evaluation with scores and explanation
         """
-        if not self.api_key or self.api_key == "your-openrouter-api-key":
+        if not llm_client.is_configured():
             return {
                 "evaluated": False,
                 "scores": None,
                 "explanation": None,
                 "strengths": [],
                 "improvements": [],
-                "error": "OpenRouter API key not configured"
+                "error": "No LLM API key configured. Set OPENROUTER_API_KEY or ANTHROPIC_API_KEY in .env"
             }
 
         system_prompt = """You are an expert educational content evaluator. Evaluate the provided content based on these criteria:
@@ -461,33 +458,15 @@ Provide your evaluation as JSON:
 Provide your evaluation as JSON."""
 
         try:
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "http://localhost:5173",
-                "X-Title": "AI Learning Platform - Validation"
-            }
+            result = await llm_client.call_llm(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_tokens=1000,
+                temperature=0.3,  # Lower temperature for more consistent evaluation
+                title="AI Learning Platform - Validation"
+            )
 
-            payload = {
-                "model": self.model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                "max_tokens": 1000,
-                "temperature": 0.3  # Lower temperature for more consistent evaluation
-            }
-
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    f"{self.base_url}/chat/completions",
-                    headers=headers,
-                    json=payload
-                )
-                response.raise_for_status()
-                data = response.json()
-
-            result_text = data["choices"][0]["message"]["content"]
+            result_text = result["content"]
 
             # Parse JSON from response
             try:

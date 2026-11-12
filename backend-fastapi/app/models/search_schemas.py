@@ -3,7 +3,7 @@ Pydantic schemas for Semantic Search (Part 2)
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional, List, Tuple
+from typing import Optional, List
 from enum import Enum
 
 

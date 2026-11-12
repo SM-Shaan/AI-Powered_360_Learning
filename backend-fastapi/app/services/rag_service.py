@@ -3,11 +3,9 @@ RAG Service - Part 2
 Retrieval-Augmented Generation for question answering
 """
 
-import httpx
-import json
-from typing import List, Optional, Dict, Any
+from typing import Optional, Dict, Any
 from app.services.retrieval_service import get_retrieval_service
-from app.core.config import settings
+from app.services import llm_client
 
 
 class RAGService:
@@ -20,46 +18,17 @@ class RAGService:
 
     def __init__(self):
         self.retrieval_service = get_retrieval_service()
-        self.api_key = settings.openrouter_api_key
-        self.base_url = settings.openrouter_base_url
-        self.model = "anthropic/claude-sonnet-4"
+        self.model = llm_client.active_model()
 
     async def _call_llm(self, system_prompt: str, user_prompt: str, max_tokens: int = 2000) -> Dict:
-        """Make a request to the LLM API"""
-        if not self.api_key or self.api_key == "your-openrouter-api-key":
-            raise ValueError("OpenRouter API key not configured")
-
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "http://localhost:5173",
-            "X-Title": "AI Learning Platform - RAG"
-        }
-
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            "max_tokens": max_tokens,
-            "temperature": 0.3  # Lower temperature for factual responses
-        }
-
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers=headers,
-                json=payload
-            )
-            response.raise_for_status()
-            data = response.json()
-
-            return {
-                "content": data["choices"][0]["message"]["content"],
-                "usage": data.get("usage", {}),
-                "model": data.get("model", self.model)
-            }
+        """Make a request to the configured LLM provider"""
+        return await llm_client.call_llm(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=max_tokens,
+            temperature=0.3,  # Lower temperature for factual responses
+            title="AI Learning Platform - RAG"
+        )
 
     async def answer_question(
         self,

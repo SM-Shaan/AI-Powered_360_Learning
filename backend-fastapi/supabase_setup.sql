@@ -120,7 +120,7 @@ VALUES (
     uuid_generate_v4(),
     'admin',
     'admin@example.com',
-    '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.VuHtVqF.GxFdKm',
+    '$2b$12$2U/o9hv0LW8uAA22mmNt6OHc20Anpo5zjJdC9Kn/m6sPqBLhmd0sW',
     'admin'
 ) ON CONFLICT (email) DO NOTHING;
 
@@ -130,7 +130,7 @@ VALUES (
     uuid_generate_v4(),
     'student',
     'student@example.com',
-    '$2b$12$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi',
+    '$2b$12$IUhzdf9epbjjXbLl7KMr/.9cESnPrRqfrxZqNgTON3Np.qC//5k86',
     'student'
 ) ON CONFLICT (email) DO NOTHING;
 

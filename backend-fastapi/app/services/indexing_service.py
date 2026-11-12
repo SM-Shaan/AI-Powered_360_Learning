@@ -3,7 +3,7 @@ Indexing Service - Part 2
 Process and index content for semantic search
 """
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, Any
 from app.services.chunking_service import get_chunking_service
 from app.services.embedding_service import get_embedding_service
 from app.core.supabase import get_supabase_admin

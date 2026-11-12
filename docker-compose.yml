@@ -1,0 +1,39 @@
+# Local containerized stack.
+#
+#   docker compose up --build
+#
+# Frontend: http://localhost:5173   Backend: http://localhost:8000/docs
+#
+# Secrets come from backend-fastapi/.env (gitignored) - copy .env.example and
+# fill it in first. The database is hosted Supabase, so there is no db service.
+
+services:
+  backend:
+    build:
+      context: ./backend-fastapi
+    image: ai360-backend
+    env_file:
+      - ./backend-fastapi/.env
+    environment:
+      # Bind to all interfaces so the port publish below reaches it.
+      HOST: 0.0.0.0
+      PORT: "8000"
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Baked in at build time. This is the URL the *browser* uses, so it is
+        # localhost (the host's published port), not the compose service name -
+        # the request originates outside the container network.
+        VITE_API_BASE_URL: http://localhost:8000/api
+    image: ai360-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
